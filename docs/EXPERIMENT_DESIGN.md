@@ -1,119 +1,228 @@
 # Experimental design
 
-## Research question
+## Primary research question
 
-The primary question is not whether a post-hoc objective can make a model appear to forget. It is whether training can be engineered so that a later deletion request can be executed as a reproducible counterfactual computation.
+Can language-model training be engineered so that a later deletion request can be executed as a reproducible counterfactual computation?
 
-The core target is a **trace-preserving deletion counterfactual**. The original execution plan fixes microbatch slots, optimizer-step boundaries, random seeds, and the learning-rate value attached to each logical step. A deletion removes a record's contribution to the loss while leaving this execution plan fixed.
+The project studies unlearning as a training-systems problem rather than only as a post-training optimization problem.
 
-This is intentionally distinct from a fresh run that repacks `D \\ F` into new batches. Repacking changes grouping, random-number consumption, optimizer-step boundaries, and often the learning-rate trajectory. That alternative is measured as a diagnostic baseline rather than silently treated as the same target.
+## Counterfactual definitions
 
-## Main hypotheses
+### Trace-preserving deletion
 
-### H1 WAL sufficiency
+The original execution plan fixes microbatch slots, per-microbatch RNG seeds, logical optimizer-step boundaries, and learning-rate values. A forget request removes selected records from the loss while preserving the rest of that execution plan.
 
-A fixed-width training WAL plus an immutable batch manifest is sufficient to reconstruct the trace-preserving execution plan from a clean checkpoint.
+### Repacked retain-set retraining
 
-### H2 exact replay
+Retained records are densely packed into new batches and a normal schedule is rebuilt. This is an important comparison, but it is not assumed to be byte equivalent to the trace-preserving target.
 
-With deterministic algorithms, an exact checkpoint, sum-reduced token loss, and a fixed execution plan, replay using the reconstructed WAL matches an independently executed trace-preserving oracle in model parameters. Optimizer-state equality is recorded separately.
+The paper must distinguish these targets explicitly.
 
-### H3 slot preservation improves numerical robustness
+## Research questions
 
-Replacing forgotten slots with deterministic dummy tokens and multiplying their token losses by zero should preserve batch shapes and random-number allocation better than physically shrinking microbatches. The study compares both policies.
+### RQ1. Can the original trace be reconstructed?
 
-### H4 repacked retraining is a different counterfactual
+Test whether the fixed-width WAL plus ordered-ID manifest reconstructs the execution plan exactly.
 
-Ordinary retain-set repacking will generally diverge from the trace-preserving counterfactual. The magnitude and practical significance of this divergence are empirical questions.
+### RQ2. Can no-deletion replay reproduce original training?
 
-### H5 exactness has a systems envelope
+Run identity replay from the step-zero checkpoint and compare model and optimizer states.
 
-Byte equality may depend on dtype, attention implementation, optimizer implementation, hardware, dropout, distributed collectives, and software versions. Failures are recorded as findings, not hidden.
+### RQ3. Can deletion replay reproduce an independent deletion oracle?
 
-## Model scale
+For each forget request, run the oracle and replay independently from the same eligible checkpoint.
 
-The main matrix uses the Pythia family because the models share a research-oriented architecture and span multiple parameter scales.
+### RQ4. Can replay operate after physical deletion?
+
+Materialize a redacted token store that omits the forgotten rows before replay.
+
+### RQ5. Which replay policy is more robust?
+
+Compare slot masking with physical row filtering.
+
+### RQ6. Which provenance fields matter empirically?
+
+Corrupt one recorded control variable at a time and measure state divergence.
+
+### RQ7. Where does determinism break?
+
+Vary dtype, kernels, dropout, optimizer implementation, device, and eventually distributed execution.
+
+### RQ8. How does deletion cost scale?
+
+Measure replay latency against model size, deletion position, forget-set geometry, and checkpoint distance.
+
+### RQ9. What are the storage tradeoffs?
+
+Measure WAL, manifest, checkpoint, rollback-patch, and adapter storage.
+
+### RQ10. How does exact replay compare with approximate unlearning?
+
+Run GA, GradDiff, NPO, and the curvature hot path against the same deletion requests and audits.
+
+## Primary model scale
 
 | Model | Role |
 | --- | --- |
-| Pythia 160M | lower-cost full pipeline |
-| Pythia 410M | small nontrivial scale |
+| Pythia 160M | low-cost full pipeline |
+| Pythia 410M | deletion-geometry anchor |
 | Pythia 1B | billion-parameter regime |
 | Pythia 1.4B | primary large run |
 | Pythia 2.8B | budget-dependent scale extension |
 
-The tiny model in CI is only a software regression test. It is never used as scientific evidence.
+The tiny CI model is never used as scientific evidence.
 
-## Data
+## Primary dataset
 
-The default preparation script samples WikiText-103 and creates fixed-length token records. Synthetic canary groups are injected only for controlled memorization and extraction audits. Every prepared dataset receives immutable sample IDs, content hashes, token arrays, and a preparation manifest.
+WikiText-103 is converted to fixed-length causal-LM records. The preparation step adds:
 
-No large dataset or model artifact is committed to Git.
+- immutable sample IDs
+- content SHA-256 values
+- deterministic SimHash signatures
+- fixed token arrays
+- synthetic canary groups
+- dataset manifest and hashes
+
+## Standard benchmark track
+
+TOFU is prepared separately using its official full, forget01, forget05, forget10, retain99, retain95, and retain90 sets. This provides a benchmark-facing validation track without making the core replay engine depend on an external benchmark implementation.
 
 ## Forget-set axes
 
-The scale matrix uses a canonical late 1 percent deletion across model sizes. A separate 410M deletion-geometry study tests early 0.1 percent, middle 1 percent, late 1 percent, and random 5 percent. This avoids multiplying every geometric condition by every expensive model size. Additional release runs should add canary-group deletion, duplicate closure, multiple random seeds, and checkpoint-distance sweeps.
+### Geometry study on 410M
 
-## Replay methods
+- early 0.1 percent
+- middle 1 percent
+- late 1 percent
+- random 5 percent
+- controlled canary group
 
-1. `slot_mask` keeps original microbatch shape, substitutes a dummy sequence for a forgotten ID, and multiplies that slot's token loss by zero.
-2. `filter` removes forgotten rows before the forward pass.
-3. `repacked` rebuilds dense retain-only microbatches and recomputes a normal schedule. It is not the exact target.
+### Scaling study
+
+Use a canonical late 1 percent deletion across model sizes.
+
+### Duplicate study
+
+Test:
+
+- exact content-hash closure
+- SimHash near-duplicate closure at reported Hamming thresholds
+
+### TOFU study
+
+Use official forget01, forget05, and forget10 ID sets.
+
+## Main replay policies
+
+### Slot mask
+
+Retain original batch shape. Forgotten IDs become dummy-token slots with zero loss weight.
+
+### Filter
+
+Remove forgotten rows before the forward pass.
+
+### Repacked
+
+Densely repack retained IDs into a new training trajectory.
 
 ## Exactness metrics
 
-For every oracle/replay pair, record:
+Record:
 
-- full state SHA-256
-- number of unequal tensors
-- number of unequal elements
+- full model SHA-256
+- full optimizer SHA-256
+- unequal tensor count
+- unequal element count
 - maximum absolute parameter difference
 - L2 parameter difference
-- optimizer-state SHA-256
-- applied and skipped optimizer updates
+- logical steps
+- applied updates
+- skipped updates
 - wall time
+
+## Systems metrics
+
+Record:
+
 - WAL bytes
+- manifest bytes
+- total provenance bytes
 - checkpoint bytes
+- checkpoint retention bytes
+- replay distance
+- rollback patch bytes
+- adapter bytes
+- training and replay time
 
-## Unlearning audits
+## Secondary audits
 
-State equality to the counterfactual oracle is the strongest audit for the exact path. Secondary audits are still useful for approximate methods and for comparison with the repacked baseline:
+For exact paths, state equality is stronger than behavioral auditing. Secondary audits remain useful for approximate methods and cross-counterfactual interpretation:
 
 - forget loss
 - retain loss
 - held-out perplexity
-- canary continuation likelihood
-- extraction success
 - loss-based membership inference AUC
-- exact and content-hash duplicate closure
+- canary completion NLL
+- greedy canary extraction
 
-## Stress tests
+## Provenance ablations
 
-The determinism suite changes one factor at a time:
+Corrupt exactly one trace component at a time:
 
-- CPU versus single GPU
+- per-microbatch seed
+- learning rate
+- sample order
+- microbatch assignment
+- accumulation boundary
+- logical optimizer-step value
+
+The resulting divergence maps the empirical sufficiency envelope of the trace.
+
+## Determinism stress suite
+
+Change one factor at a time:
+
 - FP32 versus BF16
 - eager attention versus SDPA
-- deterministic algorithms on/off
-- native dropout versus disabled dropout
-- optimizer foreach/fused variants
-- checkpoint resume distance
-- microbatch size and accumulation length
+- deterministic algorithms strict versus relaxed
+- dropout enabled versus disabled
+- optimizer foreach versus scalar implementation
+- optimizer fused versus unfused
+- CPU versus GPU where feasible
+- checkpoint-resume distance
+- microbatch size
+- accumulation length
 
-Distributed FSDP/TP claims are not made until a separate multi-GPU suite is implemented and run.
+A separate multi-GPU study is required before making distributed exactness claims.
+
+## Approximate baselines
+
+Use:
+
+- gradient ascent
+- gradient difference
+- NPO
+- curvature anti-update
+
+For standardized external comparison, use the TOFU/OpenUnlearning ecosystem where appropriate and keep its results clearly separated from the systems-scale matrix.
 
 ## Operational extensions
 
-The repository retains two extensions from the original research idea but keeps them secondary to the exact replay result.
+### XOR rollback
 
-### Recent exact rollback
+Build bytewise XOR patches between consecutive checkpoint states and measure exact recovery, storage, creation time, and application time.
 
-`rollback.py` constructs XOR byte patches over tensors and stores prior scalar metadata. This is evaluated for exact restoration, storage cost, and creation/application latency.
+### Cohort LoRA
 
-### Cohort adapters
+Train cohort-scoped adapters over a frozen base and test exact base hash recovery after adapter unload.
 
-`lora.py` supports cohort-scoped LoRA adapters over a frozen base. Deleting a cohort adapter recovers the unchanged base model by construction. Experiments should measure adapter training utility and the storage/latency tradeoff.
+### Curvature hot path
 
-### Approximate hot path
+Use the diagonal-Fisher update as a temporary approximate path and evaluate forget/retain damage.
 
-`hotpath.py` implements a diagonal-Fisher curvature anti-update. It is explicitly approximate and must be evaluated against the same audits. It must never be reported as exact deletion.
+## Result policy
+
+Failure cases remain in the released tables. A configuration that is numerically close but not byte exact must not be labeled exact.
+
+The manuscript should be written from frozen result artifacts after the full runbook is complete.

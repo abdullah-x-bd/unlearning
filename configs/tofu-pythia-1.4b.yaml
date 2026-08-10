@@ -1,0 +1,40 @@
+seed: 2026
+strict_determinism: true
+output_dir: runs/tofu-pythia-1.4b
+materialize_redacted_store: true
+model:
+  name: EleutherAI/pythia-1.4b
+  revision: main
+  device: cuda
+  dtype: bf16
+  attention_implementation: eager
+  disable_dropout: false
+data:
+  train_dir: data/prepared/tofu-pythia-1.4b-256
+plan:
+  microbatch_size: 4
+  grad_accum_steps: 4
+  epochs: 5
+  shuffle: true
+  shuffle_seed: 2026
+  rng_seed: 2027
+optimizer:
+  lr: 0.00001
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  schedule: cosine
+  foreach: false
+  fused: false
+checkpoint_every: 100
+replay_policies: [slot_mask, filter]
+run_repacked_baseline: true
+forget_scenarios:
+  - name: tofu-forget01
+    strategy: id_file
+    path: data/prepared/tofu-pythia-1.4b-256/forget01_ids.txt
+  - name: tofu-forget05
+    strategy: id_file
+    path: data/prepared/tofu-pythia-1.4b-256/forget05_ids.txt
+  - name: tofu-forget10
+    strategy: id_file
+    path: data/prepared/tofu-pythia-1.4b-256/forget10_ids.txt

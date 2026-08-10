@@ -2,51 +2,117 @@
 
 [![CI](https://github.com/abdullah-x-bd/unlearning/actions/workflows/ci.yml/badge.svg)](https://github.com/abdullah-x-bd/unlearning/actions/workflows/ci.yml)
 
-This repository is the experimental artifact for a ground-up reconstruction of **Unlearning at Scale**. The research question is whether LLM training can be engineered so that a later data-deletion request becomes a reproducible counterfactual computation rather than an ad hoc post-training edit.
+This repository is the experimental artifact for a ground-up reconstruction of **Unlearning at Scale: Implementing the Right to be Forgotten in Large Language Models**.
 
-The repository deliberately separates what is implemented from what has been empirically established. The small model used in CI is a regression test only. Paper claims will be drawn from the multi-model GPU experiments and released result artifacts.
+The paper is intentionally downstream of the artifact. The old manuscript is treated as a source of hypotheses, not as evidence. Claims for the rebuilt manuscript will be written from released experiment outputs after the full GPU program is complete.
 
-## Core idea
+## Research question
 
-A training run is represented as a program with a fixed execution plan. For each microbatch, the system records the ordered sample-ID digest, a microbatch RNG seed, the exact float32 learning-rate value, the logical optimizer-step counter, the microbatch length, and the accumulation boundary. The binary WAL record is exactly **32 bytes**. The ordered-ID manifest is separate and is measured explicitly, so the repository does not treat 32 bytes as the total provenance cost.
+Can language-model training be engineered so that a later data-deletion request becomes a reproducible counterfactual computation rather than an ad hoc post-training edit?
 
-For a future forget set `F`, replay begins from the latest checkpoint that predates the first affected logical step. The forgotten records then contribute zero training loss while the original execution plan remains fixed.
+The exact target used here is a **trace-preserving deletion counterfactual**. A training execution plan fixes microbatch slots, random seeds, optimizer-step boundaries, and learning-rate values. When a deletion request arrives, the requested records contribute zero loss while the original execution plan remains fixed.
 
-The exact target in this repository is therefore a **trace-preserving deletion counterfactual**, not an unspecified fresh training run on a repacked `D \ F` dataset.
+This is deliberately separated from ordinary retraining on a densely repacked `D \ F` dataset. Repacking can change batch composition, random-number consumption, floating-point reduction order, optimizer-step boundaries, and the learning-rate trajectory. Both counterfactuals are measured rather than conflated.
 
-That distinction matters. Repacking can alter microbatch composition, optimizer-step boundaries, random-number consumption, floating-point reduction order, and the learning-rate trajectory. The repo measures repacked retraining separately instead of silently assuming equivalence.
+## Experimental principles
 
-## What is being tested
+1. Exactness is measured, never assumed.
+2. Failures of deterministic replay are results.
+3. Byte equality is scoped to a recorded software and hardware environment.
+4. Model state and optimizer state are both hashed.
+5. The 32-byte WAL claim refers only to the fixed-width binary record. Ordered sample IDs are stored separately and their cost is reported.
+6. Main replay experiments can physically remove forgotten rows from the token store before replay.
+7. Approximate methods are labeled approximate and evaluated separately.
+8. Distributed exactness is not claimed until a dedicated multi-GPU study exists.
+9. Release runs must pin immutable model revisions.
+10. The paper is rewritten only after the claims ledger is backed by released artifacts.
 
-The main study asks five questions.
+## What is implemented
 
-1. Is a compact WAL sufficient to reconstruct the training execution plan from a clean checkpoint?
-2. Under which real training configurations does replay match an independent deletion oracle byte for byte?
-3. Does slot-preserving masked replay improve exactness over physically filtering rows from a microbatch?
-4. Where does determinism fail as model size, dtype, attention kernels, dropout, optimizer implementation, and hardware change?
-5. What are the storage and latency tradeoffs of checkpoints, replay, recent XOR rollback, and cohort-scoped adapters?
+### Exact replay core
 
-Failures are results. The experiment is not designed to force every configuration to pass.
+- immutable microbatch execution plans
+- deterministic per-microbatch RNG seeds
+- fixed accumulation boundaries
+- float32 learning-rate values recorded in the trace
+- 32-byte WAL records with CRC32
+- segment SHA-256 verification
+- ordered-ID manifest with SHA-256 or HMAC-SHA256 digests
+- exact model-state hashing
+- exact optimizer-state hashing
+- checkpoint restore and replay
+- independent trace-preserving deletion oracle
+- slot-preserving masked replay
+- physical row filtering replay
+- repacked retain-only retraining baseline
+- physically materialized redacted token stores
 
-## Main model matrix
+### Experimental ablations
 
-The initial scaling suite uses EleutherAI Pythia models:
+- RNG seed ablation
+- learning-rate ablation
+- sample-order ablation
+- microbatch-assignment ablation
+- accumulation-boundary ablation
+- logical-step ablation
+- FP32 versus BF16
+- eager versus SDPA attention
+- dropout enabled versus disabled
+- deterministic algorithms enabled versus relaxed
+- optimizer foreach and fused variants
+- checkpoint-distance sweeps
+
+### Deletion geometry
+
+- early deletion
+- middle deletion
+- late deletion
+- randomly distributed deletion
+- exact-content duplicate closure
+- SimHash near-duplicate closure
+- synthetic canary-group deletion
+- official TOFU forget01, forget05, and forget10 ID sets
+
+### Approximate comparison methods
+
+- gradient ascent
+- gradient difference with retain regularization
+- negative preference optimization
+- diagonal-Fisher curvature anti-update
+
+### Operational extensions
+
+- exact XOR byte rollback patches
+- cohort-scoped LoRA training and exact base-recovery check after adapter unload
+- checkpoint storage versus replay-latency benchmarking
+
+### Audits
+
+- forget-set token loss
+- retain-set token loss
+- held-out perplexity
+- loss-based membership inference AUC
+- canary completion NLL
+- canary exact greedy extraction rate
+- exact tensor divergence from the deletion oracle
+
+## Model scaling matrix
+
+The primary scaling study uses one architecture family so model size changes without simultaneously changing the overall model family:
 
 - `EleutherAI/pythia-160m`
 - `EleutherAI/pythia-410m`
 - `EleutherAI/pythia-1b`
 - `EleutherAI/pythia-1.4b`
-- `EleutherAI/pythia-2.8b` as the budget-dependent extension
+- `EleutherAI/pythia-2.8b`, budget-dependent extension
 
-Pythia is useful here because it provides a consistent research-oriented model family across parameter scales. Release runs will pin immutable model revisions rather than `main`.
+Development configs currently use `revision: main`. Final release configs must replace floating revisions with immutable commit SHAs and set `release_mode: true`.
 
-## Data
+## Datasets
 
-The default data-preparation script uses WikiText-103 raw text, converts it into fixed-length causal-LM records, assigns immutable sample IDs and content hashes, and injects synthetic canary groups for controlled memorization and extraction audits.
+### WikiText-103 trace study
 
-The prepared token arrays are not committed to Git.
-
-Prepare the dataset with:
+The primary systems study converts WikiText-103 into fixed-length causal-LM records and adds controlled synthetic canary groups.
 
 ```bash
 python -m pip install -e '.[llm,dev]'
@@ -59,23 +125,40 @@ python scripts/prepare_dataset.py \
   --sequence-length 256
 ```
 
+The preparation artifact includes immutable sample IDs, content SHA-256 values, SimHash signatures, token arrays, canary metadata, and a dataset manifest.
+
+### TOFU benchmark track
+
+A second preparation path converts the official TOFU full set into the same traceable token-store format and maps the official forget and retain splits to immutable IDs.
+
+```bash
+python scripts/prepare_tofu.py \
+  --model EleutherAI/pythia-1.4b \
+  --output data/prepared/tofu-pythia-1.4b-256 \
+  --sequence-length 256
+```
+
+This produces `forget01_ids.txt`, `forget05_ids.txt`, `forget10_ids.txt`, and the corresponding retain lists.
+
 ## Replay semantics
 
 ### `slot_mask`
 
-The original microbatch shape is retained. A forgotten sample ID is replaced by a deterministic dummy sequence and its token-loss weight is set to zero. The forgotten content is therefore unnecessary during replay, while the batch slot and RNG position remain stable.
+The original microbatch shape is retained. A forgotten sample ID is replaced by a deterministic dummy sequence and its token-loss weight is set to zero. No forgotten token row is required.
+
+When `materialize_redacted_store: true`, the experiment writes a new token store that physically omits the forgotten rows and then runs replay against that redacted store.
 
 ### `filter`
 
-Forgotten rows are physically removed from the microbatch before the forward pass. This is mathematically clean under a sum-reduced loss but can alter batch shapes and numerical execution. It is tested rather than assumed exact.
+Forgotten rows are removed from the microbatch before the forward pass. This is mathematically natural under a sum-reduced objective but changes batch shapes, so exactness is tested rather than assumed.
 
 ### `repacked`
 
-Retained records are densely repacked into new microbatches and a normal schedule is rebuilt. This is a diagnostic alternative counterfactual, not the exact target used by the replay proof.
+Retained examples are densely repacked into new microbatches and a new schedule is constructed. This represents ordinary retain-set retraining from the selected checkpoint. It is a different counterfactual from trace-preserving replay and is measured as such.
 
 ## Fixed-width WAL
 
-Each WAL record uses the binary layout:
+Each binary record uses:
 
 ```text
 uint64 ordered_sample_ids_digest
@@ -87,123 +170,278 @@ uint16 flags
 uint32 crc32
 ```
 
-Total binary WAL record: **32 bytes per microbatch**. This excludes the ordered-ID manifest. Every run reports WAL bytes, manifest bytes, and their combined provenance cost.
+The binary record is exactly **32 bytes per microbatch**.
 
-The ordered IDs themselves live in an access-controlled manifest. Public research runs use SHA-256-derived digests. Production use should set `UNLEARNING_WAL_HMAC_KEY`, which switches the digest to HMAC-SHA256 before truncation.
+The ordered IDs are held in a separate manifest. Every run reports:
 
-The WAL file receives a segment-level SHA-256 in addition to per-record CRC32 checks.
+- WAL bytes
+- manifest bytes
+- total provenance bytes
+- provenance bytes per microbatch
+- WAL SHA-256
+- manifest SHA-256
+
+Set `UNLEARNING_WAL_HMAC_KEY` to use HMAC-SHA256 for ordered-ID digests rather than public SHA-256-derived digests.
 
 ## Exactness evidence
 
-Every oracle/replay comparison records:
+Every exact comparison records:
 
 - full model-state SHA-256
-- optimizer-state SHA-256
+- full optimizer-state SHA-256
+- exact-hash equality
+- total tensor count
 - unequal tensor count
 - unequal element count
 - maximum absolute parameter difference
 - L2 parameter difference
 - applied optimizer updates
 - skipped logical updates
-- replay wall time
-- WAL size
+- wall-clock time
 - checkpoint size
+- replay distance
 
-A byte-exact claim is made only when the hashes and tensor comparison agree.
+A byte-exact claim is eligible only when both the hash and tensor comparison agree.
 
-## Experiment matrix
-
-The default forget scenarios are:
-
-| Scenario | Position | Fraction |
-| --- | --- | ---: |
-| `early-0.1pct` | early training | 0.1% |
-| `middle-1pct` | middle training | 1% |
-| `late-1pct` | late training | 1% |
-| `random-5pct` | distributed | 5% |
-
-The determinism stress suite additionally varies FP32/BF16, eager/SDPA attention, dropout policy, deterministic-algorithm enforcement, optimizer implementation, CPU/GPU execution, microbatch size, accumulation length, and checkpoint distance.
-
-See [`docs/EXPERIMENT_DESIGN.md`](docs/EXPERIMENT_DESIGN.md).
-
-## Run the dependency-light regression test
+## Run the dependency-light regression suite
 
 ```bash
 python -m pip install -e '.[dev]'
+pytest
 uas core-smoke --output runs/core-smoke
 ```
 
-This validates WAL serialization, WAL-to-plan reconstruction, checkpoint restoration, and exact trace replay without downloading a model. It is software testing only and is never used as evidence in the paper.
+The CI model is intentionally tiny and local. It tests software invariants only and is never used as scientific evidence.
 
-## Run a Pythia experiment
-
-After preparing the token dataset:
+## Run the main scale study
 
 ```bash
 uas run configs/pythia-160m.yaml
-```
-
-Run the scale study with:
-
-```bash
 python scripts/run_matrix.py configs/matrix-main.yaml
 ```
 
-The main scale matrix uses one canonical late-deletion scenario across 160M, 410M, 1B, 1.4B, and 2.8B. Deletion geometry is then studied separately on 410M with `configs/pythia-410m-deletion-geometry.yaml`, and one-factor-at-a-time determinism stress tests run through `scripts/run_stress.py`. This staged design avoids spending large-model GPU budget on a needlessly Cartesian experiment grid.
+The scale matrix uses a canonical late 1 percent deletion across model sizes. Deletion geometry is studied separately on 410M:
+
+```bash
+uas run configs/pythia-410m-deletion-geometry.yaml
+uas run configs/pythia-410m-canary.yaml
+```
+
+The separate design avoids multiplying every expensive model size by every deletion geometry.
+
+## Run the TOFU track
+
+```bash
+uas run configs/tofu-pythia-1.4b.yaml
+```
+
+This is a separate benchmark-facing study and must not be mixed with WikiText rows in the same result table without an explicit dataset column.
+
+## Run determinism stress tests
+
+```bash
+python scripts/run_stress.py configs/determinism-stress.yaml
+```
+
+## Test provenance sufficiency
+
+After completing a base run:
+
+```bash
+python scripts/run_provenance_ablations.py \
+  configs/pythia-160m.yaml \
+  --run-dir runs/pythia-160m \
+  --output runs/pythia-160m/provenance-ablations
+```
+
+This intentionally corrupts one execution-plan field at a time and measures divergence from the original run.
+
+## Benchmark checkpoint spacing
+
+First train with checkpoints frequent enough to support the desired sweep. Then:
+
+```bash
+python scripts/run_checkpoint_sweep.py \
+  configs/pythia-410m-deletion-geometry.yaml \
+  --run-dir runs/pythia-410m-deletion-geometry \
+  --scenario late-1pct \
+  --intervals 250 500 1000 2000 \
+  --output results/checkpoint-sweep.json
+```
+
+The result reports retained checkpoint bytes and replay latency for each hypothetical checkpoint interval.
+
+## Physically redact a prepared dataset
+
+```bash
+python scripts/redact_dataset.py \
+  data/prepared/wikitext103-pythia-256 \
+  runs/pythia-410m/forget/late-1pct/forget_ids.txt \
+  data/redacted/late-1pct
+```
+
+## Expand duplicate closure
+
+```bash
+python scripts/build_forget_closure.py \
+  data/prepared/wikitext103-pythia-256 \
+  request_ids.txt \
+  closed_request_ids.txt \
+  --exact-content \
+  --near-hamming 3
+```
+
+Near-duplicate closure uses a deterministic 64-bit SimHash over word shingles. The Hamming threshold is an experimental parameter and must be reported with results.
+
+## Approximate unlearning baselines
+
+The repo includes controlled GA, GradDiff, and NPO implementations for same-model comparisons:
+
+```bash
+python scripts/run_approximate_baselines.py \
+  configs/pythia-410m-deletion-geometry.yaml \
+  --state runs/pythia-410m-deletion-geometry/original/final-model-state.pt \
+  --forget-ids runs/pythia-410m-deletion-geometry/forget/late-1pct/forget_ids.txt \
+  --output runs/pythia-410m-deletion-geometry/approximate-baselines
+```
+
+See [`docs/BASELINES.md`](docs/BASELINES.md) for objective definitions and the standardized-benchmark interoperability plan.
+
+## Audit a saved model
+
+```bash
+python scripts/audit_saved_model.py \
+  configs/pythia-410m-deletion-geometry.yaml \
+  --state runs/pythia-410m-deletion-geometry/forget/late-1pct/oracle/final-model-state.pt \
+  --forget-ids runs/pythia-410m-deletion-geometry/forget/late-1pct/forget_ids.txt \
+  --output results/oracle-audit.json
+```
+
+A separately prepared validation token store can be supplied with `--validation-dir` for held-out perplexity and loss-based membership inference.
+
+## Benchmark recent exact rollback
+
+```bash
+python scripts/benchmark_rollback.py \
+  runs/pythia-410m-deletion-geometry/original/checkpoints \
+  --output results/rollback-benchmark.json
+```
+
+The benchmark records patch creation time, application time, patch payload bytes, and exact recovery hashes.
+
+## Run cohort-scoped LoRA deletion
+
+```bash
+python scripts/run_lora_cohort.py \
+  configs/pythia-410m-deletion-geometry.yaml \
+  --cohort-ids cohort_ids.txt \
+  --output runs/lora-cohort
+```
+
+The result reports the frozen base hash before adapter training, the base hash after adapter unload, adapter bytes, and whether base recovery is byte exact.
+
+## Run the approximate curvature hot path
+
+```bash
+python scripts/run_hotpath.py \
+  configs/pythia-410m-deletion-geometry.yaml \
+  --state runs/pythia-410m-deletion-geometry/original/final-model-state.pt \
+  --forget-ids runs/pythia-410m-deletion-geometry/forget/late-1pct/forget_ids.txt \
+  --output runs/hotpath-late-1pct
+```
+
+This method is explicitly approximate. It is not eligible for an exact deletion claim.
+
+## Aggregate results
+
+```bash
+python scripts/aggregate_results.py runs \
+  --csv results/experiment_rows.csv \
+  --json results/experiment_rows.json
+```
 
 ## Repository map
 
 ```text
 src/unlearning_at_scale/
-  audit.py          secondary forget/retain audits
+  ablations.py      provenance-field ablations
+  audit.py          forget, retain, membership, and canary audits
+  baselines.py      GA, GradDiff, and NPO baselines
+  benchmark.py      rollback benchmark utilities
   compare.py        exact tensor comparison
-  dataset.py        immutable token store and redacted replay batches
-  determinism.py    deterministic execution controls and environment capture
-  experiment.py     end-to-end experiment runner
-  forget.py         forget-set selection and duplicate closure
+  dataset.py        immutable and physically redacted token stores
+  determinism.py    deterministic controls and environment capture
+  duplicates.py     SimHash near-duplicate detection
+  experiment.py     end-to-end exact replay experiment
+  forget.py         deletion geometry and duplicate closure
   hotpath.py        approximate diagonal-Fisher anti-update
   lora.py           cohort-scoped LoRA support
   losses.py         sum-reduced causal-LM objective
-  modeling.py       Hugging Face causal-LM loader
+  modeling.py       Hugging Face model loader
   plan.py           immutable microbatch execution plan
-  repacked.py       ordinary retain-set repacking baseline
-  rollback.py       exact XOR tensor rollback patches
-  state.py          checkpoints and canonical state hashing
+  repacked.py       retain-only repacking counterfactual
+  results.py        result aggregation
+  rollback.py       exact XOR byte patches
+  state.py          checkpoints and state hashing
   training.py       deterministic trace runner
-  wal.py            32-byte WAL and manifest reconstruction
+  wal.py            fixed-width WAL and manifest reconstruction
 ```
 
-## Operational extensions
+## Experimental run order
 
-The rebuilt paper will keep the exact replay path central. Three operational extensions remain in the artifact so their claims can be tested rather than asserted.
+The full sequence is documented in [`docs/RUNBOOK.md`](docs/RUNBOOK.md). In short:
 
-**Recent rollback.** `rollback.py` stores XOR byte patches for tensors plus prior scalar metadata. Applying the patch to the later state reconstructs the earlier bytes exactly when the state structure is unchanged.
-
-**Cohort adapters.** `lora.py` supports LoRA adapters over a frozen base. A cohort adapter can be removed without changing the base model. Scaled experiments still need to quantify utility, storage, and operational latency.
-
-**Approximate hot path.** `hotpath.py` contains a diagonal-Fisher curvature anti-update. It is explicitly approximate. It is evaluated with forget, retain, extraction, and membership audits and should be viewed only as a temporary path before exact replay.
+1. freeze code and dependencies
+2. pin model revisions
+3. prepare and hash datasets
+4. run regression tests
+5. train original models and record WALs
+6. verify no-deletion identity replay
+7. run deletion oracles
+8. run replay policies with redacted stores
+9. run repacked counterfactuals
+10. run deletion geometry
+11. run model scaling
+12. run determinism stress tests
+13. run provenance ablations
+14. run checkpoint tradeoff sweeps
+15. run duplicate closure studies
+16. run approximate baselines
+17. run rollback, LoRA, and hot-path extensions
+18. run audits
+19. aggregate and freeze result artifacts
+20. populate the claims ledger
+21. rewrite the paper
 
 ## Scientific claim discipline
 
-The old manuscript is not treated as evidence. The new paper will be rewritten from the released experimental results.
+[`docs/CLAIMS_LEDGER.md`](docs/CLAIMS_LEDGER.md) lists candidate claims and the evidence required before each can appear in the rebuilt manuscript.
 
-[`docs/CLAIMS_LEDGER.md`](docs/CLAIMS_LEDGER.md) lists each candidate claim and the evidence required before it may enter the manuscript. In particular, no distributed exactness claim is permitted until a dedicated multi-GPU experiment exists.
+No result in the README is a substitute for a released experiment artifact. The current repository contains the experimental machinery. The multi-model GPU study has not yet been executed in this repository.
 
 ## Reproducibility
 
-PyTorch reproducibility is scoped to a specific software and hardware environment. Every release run must capture the exact Python packages, PyTorch/CUDA/cuDNN versions, device model, deterministic settings, model revision, dataset hashes, plan hash, WAL hash, and checkpoint hashes.
+Every release run captures the software stack, Git commit when available, PyTorch/CUDA/cuDNN versions, device information, deterministic settings, model revision, plan hash, WAL hash, checkpoint hashes, and state hashes.
 
-See [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md) and [`docs/RESULTS_SCHEMA.md`](docs/RESULTS_SCHEMA.md).
+`release_mode: true` rejects a floating model revision such as `main` or `master`.
+
+See:
+
+- [`docs/EXPERIMENT_DESIGN.md`](docs/EXPERIMENT_DESIGN.md)
+- [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md)
+- [`docs/RESULTS_SCHEMA.md`](docs/RESULTS_SCHEMA.md)
+- [`docs/BASELINES.md`](docs/BASELINES.md)
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
 
 ## Status
 
-**Repository implementation:** active reconstruction
+**Experimental framework:** implemented
 
-**Core WAL/replay/rollback regression tests:** implemented
+**Local regression suite:** implemented
 
 **Multi-model GPU results:** not yet claimed
 
-**Rewritten paper:** deliberately deferred until the GitHub evidence is complete
+**Paper rewrite:** intentionally deferred until the experimental artifact is complete and results are frozen
 
 ## License
 

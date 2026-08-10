@@ -10,6 +10,7 @@ venv/
 # Experiment outputs
 runs/
 data/prepared/
+data/redacted/
 artifacts/*
 !artifacts/.gitkeep
 results/*

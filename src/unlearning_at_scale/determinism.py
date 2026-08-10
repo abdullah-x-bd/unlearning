@@ -4,7 +4,9 @@ import json
 import os
 import platform
 import random
+import subprocess
 import sys
+from importlib import metadata
 from pathlib import Path
 from typing import Any
 
@@ -57,10 +59,27 @@ def environment_snapshot() -> dict[str, Any]:
                 }
             )
 
+    packages = {}
+    for package in ["torch", "transformers", "datasets", "peft", "numpy", "PyYAML"]:
+        try:
+            packages[package] = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            packages[package] = None
+    try:
+        git_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        git_commit = None
+
     return {
         "python": sys.version,
         "platform": platform.platform(),
         "torch": torch.__version__,
+        "packages": packages,
+        "git_commit": git_commit,
         "cuda": cuda_version,
         "cudnn": cudnn_version,
         "cuda_available": torch.cuda.is_available(),

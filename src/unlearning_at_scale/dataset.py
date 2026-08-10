@@ -93,6 +93,46 @@ class TokenStore:
         return RedactedTokenStore(self, forget_ids)
 
 
+def materialize_redacted_store(
+    source: TokenStore,
+    forget_ids: set[str],
+    output_dir: str | Path,
+) -> dict:
+    """Write a token store that physically omits forgotten records.
+
+    The resulting store can still execute an original plan under `slot_mask` or
+    `filter` because forgotten IDs are intercepted before any row lookup.
+    """
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    retained_ids = [sample_id for sample_id in source.ids if sample_id not in forget_ids]
+    retained_rows = [source.id_to_row[sample_id] for sample_id in retained_ids]
+    np.save(output / "input_ids.npy", np.asarray(source.input_ids[retained_rows], dtype=np.int64))
+    np.save(output / "attention_mask.npy", np.asarray(source.attention_mask[retained_rows], dtype=np.int64))
+    (output / "ids.json").write_text(json.dumps(retained_ids))
+
+    meta_path = source.directory / "records_meta.jsonl"
+    if meta_path.exists():
+        retained = []
+        for line in meta_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("sample_id") not in forget_ids:
+                retained.append(json.dumps(row, sort_keys=True))
+        (output / "records_meta.jsonl").write_text("\n".join(retained) + ("\n" if retained else ""))
+
+    manifest = {
+        "source_directory": str(source.directory),
+        "source_records": len(source.ids),
+        "forgotten_records": len(forget_ids),
+        "retained_records": len(retained_ids),
+        "forgotten_ids_present": any(sample_id in retained_ids for sample_id in forget_ids),
+    }
+    (output / "redaction_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return manifest
+
+
 class RedactedTokenStore:
     def __init__(self, base: TokenStore, forget_ids: set[str]):
         self.base = base
@@ -101,7 +141,15 @@ class RedactedTokenStore:
         self.sequence_length = base.sequence_length
         self.dummy_token_id = base.dummy_token_id
 
-    def get_batch(self, sample_ids: Iterable[str], policy: str) -> TokenBatch:
+    def get_batch(
+        self,
+        sample_ids: Iterable[str],
+        forget_ids: set[str] | None = None,
+        policy: str = "none",
+    ) -> TokenBatch:
+        requested_forget = forget_ids or set()
+        if requested_forget and requested_forget != self.forget_ids:
+            raise ValueError("redacted store forget set does not match replay request")
         if policy == "none":
             policy = "filter"
         return self.base.get_batch(sample_ids, self.forget_ids, policy)

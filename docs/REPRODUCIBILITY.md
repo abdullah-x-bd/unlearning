@@ -1,52 +1,92 @@
 # Reproducibility contract
 
-Exactness in this project is scoped to a recorded execution environment. PyTorch does not guarantee identical results across releases, platforms, or CPU/GPU execution, so every scientific run must preserve enough environment information to reproduce the stack.
+Exactness in this project is scoped to a recorded execution environment. Deep-learning frameworks do not promise identical numerical behavior across arbitrary releases, devices, kernels, or distributed topologies, so environment capture is part of the experimental evidence.
 
-## Required run artifacts
+## Required release artifacts
 
-Every released run should contain:
+Every release run should contain:
 
 1. resolved experiment configuration
-2. immutable execution plan and its SHA-256
-3. binary WAL and segment SHA-256
-4. ordered sample-ID manifest
-5. prepared-dataset manifest and content hashes
-6. base-model name and immutable revision or commit
-7. checkpoint hashes
-8. model and optimizer state hashes
-9. `environment.json`
-10. `pip freeze`
-11. GPU name, CUDA version, cuDNN version, and PyTorch version
-12. exactness comparison JSON
+2. Git commit SHA when available
+3. immutable model revision
+4. resolved Hugging Face model commit when available
+5. dataset manifest and hashes
+6. immutable execution plan and SHA-256
+7. binary WAL and segment SHA-256
+8. ordered sample-ID manifest and SHA-256
+9. base and intermediate checkpoint hashes
+10. model and optimizer state hashes
+11. exactness comparison JSON
+12. Python version
+13. package versions
+14. PyTorch version
+15. CUDA version
+16. cuDNN version
+17. GPU model and memory
+18. deterministic-algorithm settings
+
+## Release mode
+
+Development configs may use a floating model revision. Release configs must not.
+
+Setting:
+
+```yaml
+release_mode: true
+```
+
+causes the main experiment runner to reject `revision: main`, `revision: master`, or a missing revision.
 
 ## Deterministic defaults
 
-The code enables deterministic PyTorch algorithms, disables cuDNN benchmarking, disables TF32, sets a cuBLAS workspace configuration, and reseeds each microbatch from the execution plan.
+The code:
 
-These settings improve reproducibility but are not treated as a theorem about every kernel. The experiment reports any deterministic-operation exception or state mismatch.
+- sets a cuBLAS workspace configuration
+- disables cuDNN benchmarking
+- requests deterministic cuDNN behavior
+- disables TF32
+- requests deterministic PyTorch algorithms in strict mode
+- reseeds Python, NumPy, PyTorch CPU, and CUDA RNGs per microbatch
+- stores the learning rate in the execution plan
+- preserves accumulation boundaries
+
+These controls are test conditions, not a theorem about every possible kernel.
 
 ## Training semantics
 
 The exact target uses:
 
 - fixed microbatch slots
+- fixed sample ordering
 - fixed accumulation boundaries
 - sum-reduced token loss
 - a learning-rate value attached to each logical step
-- independent per-microbatch RNG seeds
-- an exact checkpoint from before the first affected logical step
-- no optimizer update when an entire logical step has zero retained loss
+- per-microbatch RNG seeds
+- an exact checkpoint before the first affected logical step
+- no optimizer update when a complete logical step contains zero retained loss
 
-The release paper must use the phrase `trace-preserving counterfactual` whenever this distinction matters.
+The paper should use `trace-preserving counterfactual` whenever this distinction from repacked retraining matters.
+
+## Physical redaction test
+
+For main deletion runs, enable:
+
+```yaml
+materialize_redacted_store: true
+```
+
+The experiment then writes a token store that physically omits the forgotten rows before replay. The original plan can still refer to those IDs because the replay policy intercepts them before row lookup.
 
 ## Dataset immutability
 
-Do not depend on a floating remote dataset revision for a released result. Prepare the dataset once, record the upstream revision when available, and publish the preparation manifest plus cryptographic hashes. Large token arrays may be attached to a release or archived separately.
+Do not regenerate a release dataset under an existing artifact name. Record the upstream dataset revision where available and archive the preparation manifest.
+
+The dataset preparation scripts store cryptographic file hashes. WikiText preparation also stores content hashes and SimHash signatures used by duplicate-closure experiments.
 
 ## Model immutability
 
-Replace `revision: main` with a model commit SHA for release runs.
+Replace floating `revision: main` values with model commit SHAs for release runs.
 
-## CI
+## CI versus scientific evidence
 
-CI uses a tiny local causal model only to detect software regressions in WAL serialization, checkpoint replay, and XOR rollback. CI results are not paper results.
+CI uses a tiny local causal model to detect regressions in WAL serialization, plan reconstruction, exact replay, physical redaction, duplicate closure, baseline objectives, and XOR rollback. CI is not scientific evidence for LLM-scale exactness.

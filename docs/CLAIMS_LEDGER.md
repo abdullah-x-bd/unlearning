@@ -1,16 +1,22 @@
 # Claims ledger
 
-No claim moves into the rewritten paper until its evidence cell is populated by a released run artifact.
+No candidate claim moves into the rebuilt manuscript until its required evidence is present in a released artifact.
 
-| ID | Candidate claim | Required evidence | Status |
+| ID | Candidate claim | Required evidence | Current status |
 | --- | --- | --- | --- |
-| G1 | WAL reconstruction reproduces the execution plan | plan/WAL equality across all main runs | pending large runs |
-| G2 | trace-preserving replay can be byte exact | exact model and optimizer hashes across model scales and seeds | pending large runs |
-| G3 | slot masking is more robust than physical filtering | determinism stress matrix | pending |
-| G4 | repacked retraining is generally not byte equivalent | repacked baseline comparisons | pending |
-| G5 | checkpoint spacing trades storage for replay latency | checkpoint sweep with measured bytes and time | pending |
-| G6 | XOR patches exactly restore recent states | unit tests plus scaled storage/latency sweep | core test implemented |
-| G7 | cohort adapter deletion exactly recovers the frozen base | LoRA cohort experiment and base hash equality | implementation scaffolded |
-| G8 | curvature hot path reduces forget evidence before exact replay | forget/retain audits versus baselines | implementation scaffolded |
-| G9 | distributed replay is exact | multi-GPU deterministic suite | not yet eligible for claim |
-| G10 | the mechanism operationalizes legal erasure requirements | legal analysis distinct from technical results | not a technical claim |
+| G1 | WAL reconstruction reproduces the intended execution plan | plan/WAL equality across release runs | implemented, GPU evidence pending |
+| G2 | no-deletion replay can reproduce the original run | model and optimizer identity replay across release matrix | implementation complete, runs pending |
+| G3 | trace-preserving deletion replay can be byte exact | oracle versus replay hashes and tensor comparisons across scales and seeds | runs pending |
+| G4 | physical deletion of token rows is compatible with replay | replay against materialized redacted stores | implementation complete, scale runs pending |
+| G5 | slot masking is more robust than physical filtering | determinism and deletion matrix | runs pending |
+| G6 | repacked retain-only retraining can diverge from the trace-preserving target | same-checkpoint repacked comparisons | runs pending |
+| G7 | specific provenance fields are empirically necessary | one-field provenance ablations | implementation complete, runs pending |
+| G8 | checkpoint spacing creates a storage versus replay-latency tradeoff | checkpoint interval sweep | implementation complete, runs pending |
+| G9 | exact and near-duplicate closure changes deletion scope | closure counts and downstream experiments | implementation complete, runs pending |
+| G10 | XOR rollback restores earlier state bytes exactly | unit tests plus scaled checkpoint benchmark | regression test passes, scale benchmark pending |
+| G11 | cohort adapter deletion can recover the unchanged base exactly | base hash before adapter and after unload | implementation complete, GPU run pending |
+| G12 | curvature hot path provides useful approximate deletion behavior | forget/retain/audit comparison against baselines | implementation complete, runs pending |
+| G13 | replay compares favorably with GA, GradDiff, and NPO on the relevant tradeoffs | same-model baseline suite | implementation complete, runs pending |
+| G14 | the mechanism generalizes beyond the synthetic trace study | TOFU track and model-scale replication | implementation complete, runs pending |
+| G15 | distributed replay is exact | dedicated multi-GPU deterministic suite | not implemented, claim prohibited |
+| G16 | the mechanism directly satisfies a specific legal erasure obligation | separate legal analysis tied to actual technical guarantees | not a technical claim |

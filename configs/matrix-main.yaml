@@ -3,6 +3,7 @@ output_root: runs/main-matrix
 base:
   seed: 2026
   strict_determinism: true
+  materialize_redacted_store: true
   model:
     device: cuda
     dtype: bf16
@@ -27,7 +28,6 @@ base:
   run_repacked_baseline: true
   forget_scenarios:
     - {name: late-1pct, strategy: late, fraction: 0.01}
-
 
 models:
   - {name: EleutherAI/pythia-160m, revision: main}

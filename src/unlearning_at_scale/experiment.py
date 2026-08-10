@@ -8,9 +8,9 @@ import torch
 
 from .compare import compare_state_dicts
 from .config import config_sha256
-from .dataset import TokenStore
+from .dataset import TokenStore, materialize_redacted_store
 from .determinism import configure_determinism, environment_snapshot
-from .forget import earliest_forget_step, select_forget_ids
+from .forget import earliest_forget_step, select_scenario_forget_ids
 from .modeling import load_causal_lm
 from .plan import build_plan, read_plan, write_plan
 from .repacked import build_repacked_plan
@@ -98,6 +98,8 @@ def _comparison_to_saved_state(reference_path: Path, reference_hash: str, model:
 
 
 def run_experiment(config: dict) -> dict:
+    if bool(config.get("release_mode", False)) and config.get("model", {}).get("revision") in {None, "main", "master"}:
+        raise ValueError("release_mode requires an immutable model revision, not a floating branch")
     seed = int(config.get("seed", 2026))
     configure_determinism(seed, strict=bool(config.get("strict_determinism", True)))
     device = _device(config)
@@ -155,6 +157,7 @@ def run_experiment(config: dict) -> dict:
     torch.save(model.state_dict(), original_state_path)
     original_summary = {
         "stats": original_stats.to_dict(),
+        "resolved_model_commit": getattr(model.config, "_commit_hash", None),
         "model_sha256": original_model_hash,
         "optimizer_sha256": original_optimizer_hash,
         "base_checkpoint": base_info,
@@ -186,10 +189,10 @@ def run_experiment(config: dict) -> dict:
     for scenario_index, scenario in enumerate(config.get("forget_scenarios", [])):
         scenario_name = scenario["name"]
         scenario_dir = output_dir / "forget" / scenario_name
-        forget_ids = select_forget_ids(
+        forget_ids = select_scenario_forget_ids(
             plan,
-            fraction=float(scenario["fraction"]),
-            strategy=scenario["strategy"],
+            scenario,
+            train_dir=config["data"]["train_dir"],
             seed=int(scenario.get("seed", seed + 100 + scenario_index)),
         )
         (scenario_dir / "forget_ids.txt").parent.mkdir(parents=True, exist_ok=True)
@@ -219,11 +222,18 @@ def run_experiment(config: dict) -> dict:
         )
         _release(oracle_runner, oracle_optimizer, oracle_model, oracle_tokenizer)
 
+        if bool(config.get("materialize_redacted_store", False)):
+            redacted_dir = scenario_dir / "redacted-data"
+            redaction_manifest = materialize_redacted_store(store, forget_ids, redacted_dir)
+            redacted_store = TokenStore(redacted_dir, dummy_token_id=store.dummy_token_id)
+        else:
+            redaction_manifest = {"materialized": False}
+            redacted_store = store.redact(forget_ids)
         policy_results: dict[str, dict] = {}
         for policy in config.get("replay_policies", ["slot_mask", "filter"]):
             replay_model, replay_tokenizer, replay_optimizer = _new_model_optimizer(config)
             load_checkpoint(checkpoint_path, replay_model, replay_optimizer, map_location=device)
-            replay_runner = TraceRunner(replay_model, replay_optimizer, store, device=device, dtype=config["model"].get("dtype", "fp32"))
+            replay_runner = TraceRunner(replay_model, replay_optimizer, redacted_store, device=device, dtype=config["model"].get("dtype", "fp32"))
             replay_stats = replay_runner.run(
                 reconstructed,
                 forget_ids=forget_ids,
@@ -256,7 +266,7 @@ def run_experiment(config: dict) -> dict:
                 warmup_ratio=float(opt_cfg.get("warmup_ratio", 0.0)),
                 schedule=opt_cfg.get("schedule", "constant"),
             )
-            repacked_runner = TraceRunner(repacked_model, repacked_optimizer, store, device=device, dtype=config["model"].get("dtype", "fp32"))
+            repacked_runner = TraceRunner(repacked_model, repacked_optimizer, redacted_store, device=device, dtype=config["model"].get("dtype", "fp32"))
             repacked_stats = repacked_runner.run(repacked_plan, policy="none")
             repacked_payload = {
                 "stats": repacked_stats.to_dict(),
@@ -273,6 +283,7 @@ def run_experiment(config: dict) -> dict:
             "forget_count": len(forget_ids),
             "earliest_affected_step": earliest,
             "checkpoint_step": checkpoint_step,
+            "redaction": redaction_manifest,
             "replay": policy_results,
             "repacked": repacked_payload,
         }

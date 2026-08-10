@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from unlearning_at_scale.duplicates import simhash64
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare an immutable fixed-length token dataset for replay experiments")
@@ -77,7 +79,7 @@ def main() -> None:
         ids.append(sample_id)
         input_ids.append(encoded["input_ids"])
         masks.append(encoded["attention_mask"])
-        metadata.append({"sample_id": sample_id, "content_sha256": content_hash, "is_canary": sample_id.startswith("canary-")})
+        metadata.append({"sample_id": sample_id, "content_sha256": content_hash, "simhash64": simhash64(text), "is_canary": sample_id.startswith("canary-")})
 
     np.save(output / "input_ids.npy", np.asarray(input_ids, dtype=np.int64))
     np.save(output / "attention_mask.npy", np.asarray(masks, dtype=np.int64))
