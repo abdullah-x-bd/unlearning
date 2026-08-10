@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: "Unlearning at Scale: Implementing the Right to be Forgotten in Large Language Models"
+message: "If you use this software or experimental artifact, please cite the associated paper and this repository."
+type: software
+authors:
+  - family-names: "X"
+    given-names: "Abdullah"
+year: 2026
+license: Apache-2.0
+repository-code: "https://github.com/abdullah-x-bd/unlearning"

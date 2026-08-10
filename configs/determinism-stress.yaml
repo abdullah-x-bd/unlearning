@@ -1,0 +1,23 @@
+base_config: configs/pythia-160m.yaml
+output_root: runs/determinism-stress
+variants:
+  - name: baseline-eager-bf16
+    overrides: {}
+  - name: fp32
+    overrides:
+      model.dtype: fp32
+  - name: sdpa
+    overrides:
+      model.attention_implementation: sdpa
+  - name: dropout-disabled
+    overrides:
+      model.disable_dropout: true
+  - name: nondeterministic-allowed
+    overrides:
+      strict_determinism: false
+  - name: optimizer-foreach
+    overrides:
+      optimizer.foreach: true
+  - name: optimizer-fused
+    overrides:
+      optimizer.fused: true

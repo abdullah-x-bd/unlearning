@@ -1,0 +1,25 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.env
+.DS_Store
+
+# Experiment outputs
+runs/
+data/prepared/
+artifacts/*
+!artifacts/.gitkeep
+results/*
+!results/.gitkeep
+
+# Large model/data files
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.npy
+*.npz
+*.wal
