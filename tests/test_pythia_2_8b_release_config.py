@@ -13,6 +13,7 @@ def test_pythia_2_8b_release_is_core_four_pass_replication():
     assert config["checkpoint_every"] == 0
     assert config["replay_policies"] == ["slot_mask"]
     assert config["run_repacked_baseline"] is False
+    assert config["release_phase_smoke"] is True
 
     scenarios = config["forget_scenarios"]
     assert len(scenarios) == 1
