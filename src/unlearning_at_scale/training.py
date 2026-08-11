@@ -104,9 +104,7 @@ class TraceRunner:
             seed_microbatch(spec.seed)
             batch = self.token_store.get_batch(spec.sample_ids, forget, policy)
             if batch.retained_count > 0:
-                batch.input_ids = batch.input_ids.to(self.device)
-                batch.attention_mask = batch.attention_mask.to(self.device)
-                batch.sample_weights = batch.sample_weights.to(self.device)
+                batch = batch.to(self.device)
                 for group in self.optimizer.param_groups:
                     group["lr"] = float(spec.lr)
                 with autocast_context(self.device, self.dtype):

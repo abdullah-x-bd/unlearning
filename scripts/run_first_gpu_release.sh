@@ -25,6 +25,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 printf '%s\n' "$(git rev-parse HEAD)" > "$RESULTS_DIR/gpu-repository-commit.txt"
 python scripts/gpu_probe.py --output "$RESULTS_DIR/gpu-probe.json"
+python scripts/gpu_batch_smoke.py | tee "$RESULTS_DIR/gpu-batch-smoke.json"
 nvidia-smi -q > "$RESULTS_DIR/gpu-nvidia-smi.txt"
 python -m pip freeze > "$RESULTS_DIR/gpu-pip-freeze.txt"
 

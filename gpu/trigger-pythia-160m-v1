@@ -1,1 +1,1 @@
-This marker intentionally triggers the first guarded paid Pythia 160M release run when merged to main.
+Attempt 2: rerun the guarded Pythia 160M release after fixing complete TokenBatch device transfer and adding a CUDA batch smoke gate.
