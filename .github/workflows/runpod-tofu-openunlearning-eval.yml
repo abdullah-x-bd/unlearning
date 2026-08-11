@@ -23,7 +23,7 @@ jobs:
       HF_TOKEN_PRIMARY: ${{ secrets.HF_TOKEN }}
       HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
       MAX_HOURLY_COST: "0.70"
-      MAX_RUNTIME_MINUTES: "240"
+      POD_SELF_DESTRUCT_SECONDS: "14400"
       FROZEN_RELEASE_DIR: results/releases/tofu-llama32-1b-forget10-2026-08-11
     steps:
       - uses: actions/checkout@v4
@@ -65,9 +65,9 @@ jobs:
           token = (os.environ.get('HF_TOKEN_PRIMARY') or os.environ.get('HF_TOKEN_ALT') or '').strip()
           if not token:
               raise RuntimeError('HF_TOKEN is missing; refusing to allocate paid GPU compute')
-
           lock = json.loads(Path('locks/artifacts.lock.json').read_text())
           llama = lock['huggingface']['llama32_1b_instruct']
+          retain90 = lock['huggingface']['tofu_llama32_1b_retain90_reference']
           if llama['resolved_sha'] != frozen['model_revision']:
               raise RuntimeError('artifact lock and frozen TOFU release disagree on Llama revision')
           hf_hub_download(
@@ -77,19 +77,23 @@ jobs:
               token=token,
           )
           hf_hub_download(
-              repo_id='open-unlearning/tofu_Llama-3.2-1B-Instruct_retain90',
+              repo_id=retain90['repo_id'],
               filename='config.json',
-              revision='7114300c0049527a71833f5683965c358ad9dcbf',
+              revision=retain90['resolved_sha'],
               token=token,
           )
-          print('Frozen TOFU hashes and model access verified before allocation')
+          print('Frozen TOFU hashes and pinned retain90 access verified before allocation')
           PY
 
-      - name: Zero-cost pinned OpenUnlearning command preflight
+      - name: Zero-cost OpenUnlearning and runner preflight
         run: |
           set -Eeuo pipefail
           python scripts/bootstrap_upstreams.py
           test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
+          bash -n scripts/run_tofu_openunlearning_eval.sh
+          python -m py_compile \
+            scripts/reconstruct_tofu_for_openunlearning.py \
+            scripts/openunlearning_adapter.py
           python scripts/openunlearning_adapter.py tofu-eval \
             --checkpoint /tmp/uas-placeholder-original \
             --forget-split forget10 \
@@ -97,20 +101,6 @@ jobs:
             --attention-implementation eager \
             --output-root /tmp/uas-openunlearning-preflight \
             --dry-run
-          python - <<'PY'
-          from pathlib import Path
-          import importlib.util
-          paths = [
-              'scripts/reconstruct_tofu_for_openunlearning.py',
-              'scripts/openunlearning_adapter.py',
-          ]
-          for path in paths:
-              spec = importlib.util.spec_from_file_location('preflight_module', path)
-              if spec is None or spec.loader is None:
-                  raise RuntimeError(f'could not import-check {path}')
-              compile(Path(path).read_text(), path, 'exec')
-          print('Reconstruction and adapter syntax preflight passed')
-          PY
 
       - name: Generate ephemeral SSH key and token file
         run: |
@@ -172,9 +162,10 @@ jobs:
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=6 \
             "root@${{ steps.pod.outputs.host }}" \
-            "REPO_SHA='${GITHUB_SHA}' MAX_RUNTIME_MINUTES='${MAX_RUNTIME_MINUTES}' bash -s" <<'REMOTE'
+            "REPO_SHA='${GITHUB_SHA}' SELF_DESTRUCT='${POD_SELF_DESTRUCT_SECONDS}' bash -s" <<'REMOTE'
           set -Eeuo pipefail
-          nohup bash -lc 'sleep 16200; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
+          nohup bash -lc 'sleep '"$SELF_DESTRUCT"'; runpodctl pod delete "$RUNPOD_POD_ID"' \
+            >/tmp/uas-self-destruct.log 2>&1 &
 
           cd /workspace
           rm -rf unlearning
@@ -193,129 +184,10 @@ jobs:
           python -m pip install --no-cache-dir -e '.[llm,dev]'
           mkdir -p results
           cp /workspace/runpod-allocation.json results/runpod-allocation.json
-          exec > >(tee -a results/tofu-openunlearning-eval.log) 2>&1
-
-          package_evidence() {
-            set +e
-            df -h > results/tofu-openunlearning-disk-after.txt 2>&1
-            python - <<'PY'
-          from pathlib import Path
-          import hashlib
-          import tarfile
-
-          output = Path('results/tofu-openunlearning-evidence.tar.gz')
-          roots = [
-              Path('results/openunlearning/tofu'),
-              Path('runs/tofu-openunlearning-reconstruction'),
-          ]
-          singles = [
-              Path('results/runpod-allocation.json'),
-              Path('results/tofu-openunlearning-eval.log'),
-              Path('results/tofu-openunlearning-gpu-probe.json'),
-              Path('results/tofu-openunlearning-disk-before.txt'),
-              Path('results/tofu-openunlearning-disk-after.txt'),
-              Path('results/releases/tofu-llama32-1b-forget10-2026-08-11/frozen-hashes.json'),
-          ]
-          excluded_suffixes = {'.pt', '.pth', '.bin', '.npy', '.npz', '.safetensors'}
-          excluded_parts = {'redacted-data'}
-          with tarfile.open(output, 'w:gz') as archive:
-              for root in roots:
-                  if not root.exists():
-                      continue
-                  for path in sorted(root.rglob('*')):
-                      if not path.is_file():
-                          continue
-                      if path.suffix in excluded_suffixes:
-                          continue
-                      if any(part in excluded_parts for part in path.parts):
-                          continue
-                      archive.add(path, arcname=str(path))
-              for path in singles:
-                  if path.exists():
-                      archive.add(path, arcname=str(path))
-          digest = hashlib.sha256(output.read_bytes()).hexdigest()
-          Path('results/tofu-openunlearning-evidence.sha256').write_text(
-              f'{digest}  {output.name}\n'
-          )
-          print(f'OpenUnlearning evidence TAR SHA256: {digest}', flush=True)
-          PY
-          }
-          trap package_evidence EXIT
-
-          df -h > results/tofu-openunlearning-disk-before.txt
-          python scripts/gpu_probe.py --output results/tofu-openunlearning-gpu-probe.json
-          python scripts/bootstrap_upstreams.py
-          python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
-          python scripts/validate_release_data.py
-          python scripts/verify_release_lock.py
-
-          python scripts/gpu_phase_release_smoke.py \
-            --config configs/benchmarks/tofu-llama32-1b-forget10.yaml \
-            --output results/tofu-openunlearning-phase-release-smoke.json
-
-          FROZEN=results/releases/tofu-llama32-1b-forget10-2026-08-11/frozen-hashes.json
-          readarray -t HASHES < <(python - "$FROZEN" <<'PY'
-          import json, sys
-          f = json.load(open(sys.argv[1]))
-          for key in [
-              'plan_sha256',
-              'forget_ids_sha256',
-              'original_model_sha256',
-              'original_optimizer_sha256',
-              'deletion_model_sha256',
-              'deletion_optimizer_sha256',
-          ]:
-              print(f[key])
-          PY
-          )
-
-          timeout --signal=TERM --kill-after=180s "${MAX_RUNTIME_MINUTES}m" \
-            python scripts/reconstruct_tofu_for_openunlearning.py \
-              --expected-plan-sha256 "${HASHES[0]}" \
-              --expected-forget-sha256 "${HASHES[1]}" \
-              --expected-original-model-sha256 "${HASHES[2]}" \
-              --expected-original-optimizer-sha256 "${HASHES[3]}" \
-              --expected-deletion-model-sha256 "${HASHES[4]}" \
-              --expected-deletion-optimizer-sha256 "${HASHES[5]}"
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          frozen = json.loads(Path('results/releases/tofu-llama32-1b-forget10-2026-08-11/frozen-hashes.json').read_text())
-          rebuilt = json.loads(Path('runs/tofu-openunlearning-reconstruction/summary.json').read_text())
-          assert rebuilt['status'] == 'passed'
-          assert rebuilt['original']['model_sha256'] == frozen['original_model_sha256']
-          assert rebuilt['original']['optimizer_sha256'] == frozen['original_optimizer_sha256']
-          assert rebuilt['deletion']['model_sha256'] == frozen['deletion_model_sha256']
-          assert rebuilt['deletion']['optimizer_sha256'] == frozen['deletion_optimizer_sha256']
-          print('Canonical state hash gate passed; standardized evaluation may proceed', flush=True)
-          PY
-
-          # Install the pinned external evaluator only after exact reconstruction succeeds.
-          # Evaluation uses eager attention uniformly, avoiding the upstream optional
-          # FlashAttention2 dependency while leaving OpenUnlearning metric code/config pinned.
-          python -m pip install --no-cache-dir -e external/open-unlearning
-          test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
-
-          python scripts/openunlearning_adapter.py tofu-eval \
-            --checkpoint runs/tofu-openunlearning-reconstruction/hf/original \
-            --forget-split forget10 \
-            --task-name uas_frozen_original_forget10 \
-            --attention-implementation eager \
-            --output-root results/openunlearning/tofu
-
-          python scripts/openunlearning_adapter.py tofu-eval \
-            --checkpoint runs/tofu-openunlearning-reconstruction/hf/deletion \
-            --forget-split forget10 \
-            --task-name uas_frozen_trace_delete_forget10 \
-            --attention-implementation eager \
-            --output-root results/openunlearning/tofu
-
-          test -f results/openunlearning/tofu/reference/retain90/TOFU_EVAL.json
-          test -f results/openunlearning/tofu/models/uas_frozen_original_forget10/TOFU_EVAL.json
-          test -f results/openunlearning/tofu/models/uas_frozen_trace_delete_forget10/TOFU_EVAL.json
-          test -f results/openunlearning/tofu/models/uas_frozen_original_forget10/uas_interop.json
-          test -f results/openunlearning/tofu/models/uas_frozen_trace_delete_forget10/uas_interop.json
+          RECONSTRUCTION_MINUTES=90 \
+          FIRST_EVAL_MINUTES=75 \
+          SECOND_EVAL_MINUTES=45 \
+            bash scripts/run_tofu_openunlearning_eval.sh
           REMOTE
 
       - name: Collect compact reconstruction and evaluation evidence
@@ -358,7 +230,11 @@ jobs:
               'reported_hourly_gpu_cost': hourly,
               'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
               'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
-              'hard_remote_runtime_minutes': int(os.environ['MAX_RUNTIME_MINUTES']),
+              'pod_self_destruct_seconds': int(os.environ['POD_SELF_DESTRUCT_SECONDS']),
+              'maximum_gpu_cost_at_both_caps': (
+                  float(os.environ['MAX_HOURLY_COST'])
+                  * int(os.environ['POD_SELF_DESTRUCT_SECONDS']) / 3600.0
+              ),
               'training_passes': 2,
               'benchmark': 'OpenUnlearning TOFU forget10',
               'attention_implementation': 'eager',
