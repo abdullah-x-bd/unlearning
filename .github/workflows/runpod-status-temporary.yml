@@ -24,7 +24,7 @@ jobs:
       - name: Read current research Pod status and utilization
         run: |
           python - <<'PY'
-          import json, os, urllib.request
+          import json, os, urllib.request, urllib.error
           from pathlib import Path
 
           rest_req = urllib.request.Request(
@@ -34,20 +34,27 @@ jobs:
           with urllib.request.urlopen(rest_req, timeout=30) as response:
               pods = json.load(response)
 
-          gql = {
-              'query': '''query { myself { pods { id name runtime { uptimeInSeconds gpus { id gpuUtilPercent memoryUtilPercent } container { cpuPercent memoryPercent } } } } }'''
-          }
-          gql_req = urllib.request.Request(
-              f"https://api.runpod.io/graphql?api_key={os.environ['RUNPOD_API_KEY']}",
-              data=json.dumps(gql).encode(),
-              headers={'Content-Type': 'application/json'},
-          )
-          with urllib.request.urlopen(gql_req, timeout=30) as response:
-              gql_payload = json.load(response)
-          runtime_by_id = {
-              p['id']: p.get('runtime')
-              for p in ((gql_payload.get('data') or {}).get('myself') or {}).get('pods', [])
-          }
+          runtime_by_id = {}
+          graph_error = None
+          try:
+              gql = {
+                  'query': '''query { myself { pods { id name runtime { uptimeInSeconds gpus { id gpuUtilPercent memoryUtilPercent } container { cpuPercent memoryPercent } } } } }'''
+              }
+              gql_req = urllib.request.Request(
+                  f"https://api.runpod.io/graphql?api_key={os.environ['RUNPOD_API_KEY']}",
+                  data=json.dumps(gql).encode(),
+                  headers={'Content-Type': 'application/json'},
+              )
+              with urllib.request.urlopen(gql_req, timeout=30) as response:
+                  gql_payload = json.load(response)
+              if gql_payload.get('errors'):
+                  graph_error = gql_payload['errors']
+              runtime_by_id = {
+                  p['id']: p.get('runtime')
+                  for p in ((gql_payload.get('data') or {}).get('myself') or {}).get('pods', [])
+              }
+          except Exception as exc:
+              graph_error = f"{type(exc).__name__}: {exc}"
 
           rows = []
           for pod in pods:
@@ -66,7 +73,8 @@ jobs:
                   'createdAt': pod.get('createdAt'),
                   'runtime': runtime_by_id.get(pod.get('id')),
               })
-          Path('gpu/runpod-status-v1.json').write_text(json.dumps({'pods': rows}, indent=2, sort_keys=True) + '\n')
+          payload = {'pods': rows, 'graphql_error': graph_error}
+          Path('gpu/runpod-status-v1.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
           PY
       - name: Persist sanitized status
         run: |
