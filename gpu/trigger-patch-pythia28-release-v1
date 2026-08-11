@@ -1,0 +1,1 @@
+Apply the caller-owned CUDA phase release fix, add the real 2.8B lifecycle smoke gate, and run the targeted zero-cost regression suite.
