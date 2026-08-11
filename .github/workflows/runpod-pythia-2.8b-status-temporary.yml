@@ -21,33 +21,38 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Read current 2.8B calibration Pod status
+      - name: Wait briefly for current 2.8B calibration Pod status
         run: |
           python - <<'PY'
-          import json, os, urllib.request
+          import json, os, time, urllib.request
           from pathlib import Path
-          req = urllib.request.Request(
-              'https://rest.runpod.io/v1/pods',
-              headers={'Authorization': f"Bearer {os.environ['RUNPOD_API_KEY']}"},
-          )
-          with urllib.request.urlopen(req, timeout=30) as response:
-              pods = json.load(response)
           rows = []
-          for pod in pods:
-              if not str(pod.get('name', '')).startswith('uas-pythia28-cal-'):
-                  continue
-              gpu = pod.get('gpu') or {}
-              machine = pod.get('machine') or {}
-              rows.append({
-                  'id': pod.get('id'),
-                  'name': pod.get('name'),
-                  'desiredStatus': pod.get('desiredStatus'),
-                  'adjustedCostPerHr': pod.get('adjustedCostPerHr'),
-                  'costPerHr': pod.get('costPerHr'),
-                  'gpu': gpu.get('displayName') or machine.get('gpuDisplayName') or machine.get('gpuTypeId'),
-                  'cloudType': pod.get('cloudType'),
-                  'createdAt': pod.get('createdAt'),
-              })
+          for _ in range(24):
+              req = urllib.request.Request(
+                  'https://rest.runpod.io/v1/pods',
+                  headers={'Authorization': f"Bearer {os.environ['RUNPOD_API_KEY']}"},
+              )
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  pods = json.load(response)
+              rows = []
+              for pod in pods:
+                  if not str(pod.get('name', '')).startswith('uas-pythia28-cal-'):
+                      continue
+                  gpu = pod.get('gpu') or {}
+                  machine = pod.get('machine') or {}
+                  rows.append({
+                      'id': pod.get('id'),
+                      'name': pod.get('name'),
+                      'desiredStatus': pod.get('desiredStatus'),
+                      'adjustedCostPerHr': pod.get('adjustedCostPerHr'),
+                      'costPerHr': pod.get('costPerHr'),
+                      'gpu': gpu.get('displayName') or machine.get('gpuDisplayName') or machine.get('gpuTypeId'),
+                      'cloudType': pod.get('cloudType'),
+                      'createdAt': pod.get('createdAt'),
+                  })
+              if rows:
+                  break
+              time.sleep(5)
           Path('gpu/pythia-2.8b-calibration-status.json').write_text(json.dumps({'pods': rows}, indent=2, sort_keys=True) + '\n')
           PY
       - name: Persist sanitized status
