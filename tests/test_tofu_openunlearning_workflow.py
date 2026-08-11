@@ -4,6 +4,7 @@ from pathlib import Path
 def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     workflow = Path(".github/workflows/runpod-tofu-openunlearning-eval.yml").read_text()
     runner = Path("scripts/run_tofu_openunlearning_eval.sh").read_text()
+    preflight = Path("scripts/preflight_tofu_openunlearning.py").read_text()
 
     assert 'MAX_HOURLY_COST: "0.70"' in workflow
     assert 'POD_SELF_DESTRUCT_SECONDS: "14400"' in workflow
@@ -11,13 +12,17 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     assert "runpod_control.py delete" in workflow
     assert "tofu-openunlearning-evidence.tar.gz" in workflow
     assert "scripts/run_tofu_openunlearning_eval.sh" in workflow
-    assert "tofu_llama32_1b_retain90_reference" in workflow
-    assert "--attention-implementation eager" in workflow
+    assert "scripts/preflight_tofu_openunlearning.py" in workflow
+    assert "runpodctl pod delete \\$RUNPOD_POD_ID" in workflow
+
+    assert "tofu_llama32_1b_retain90_reference" in preflight
+    assert "open-unlearning/tofu_Llama-3.2-1B-Instruct" not in preflight
 
     assert 'RECONSTRUCTION_MINUTES="${RECONSTRUCTION_MINUTES:-90}"' in runner
     assert 'FIRST_EVAL_MINUTES="${FIRST_EVAL_MINUTES:-75}"' in runner
     assert 'SECOND_EVAL_MINUTES="${SECOND_EVAL_MINUTES:-45}"' in runner
     assert runner.count("openunlearning_adapter.py tofu-eval") == 2
+    assert runner.count("--attention-implementation eager") == 2
     assert "tofu-baselines" not in runner
     assert "src/train.py" not in runner
     assert "Canonical state hash gate passed" in runner
