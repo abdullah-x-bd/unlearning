@@ -15,6 +15,8 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     assert "scripts/preflight_tofu_openunlearning.py" in workflow
     assert "runpodctl pod delete \\$RUNPOD_POD_ID" in workflow
     assert "lm-eval==0.4.11" in workflow
+    assert "torch==2.4.1" in workflow
+    assert "https://download.pytorch.org/whl/cpu" in workflow
     assert "from lm_eval.models.hf_vlms import HFLM" in workflow
     assert "Preserve hash-verified checkpoints after evaluator failure" in workflow
     assert "tofu-openunlearning-recovery.tar" in workflow
