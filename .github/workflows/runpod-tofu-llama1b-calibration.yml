@@ -1,0 +1,276 @@
+name: RunPod TOFU Llama 1B calibration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-tofu-llama1b-calibration-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runpod-tofu-llama1b-calibration
+  cancel-in-progress: false
+
+jobs:
+  calibration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      HF_TOKEN_PRIMARY: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
+      MAX_HOURLY_COST: "1.00"
+      MAX_CALIBRATION_MINUTES: "20"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify credentials and frozen model access before allocating compute
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          python -m pip install --disable-pip-version-check --quiet huggingface_hub==0.36.0 pyyaml==6.0.2
+          python scripts/runpod_control.py auth-check
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from huggingface_hub import hf_hub_download
+
+          token = (os.environ.get('HF_TOKEN_PRIMARY') or os.environ.get('HF_TOKEN_ALT') or '').strip()
+          if not token:
+              raise RuntimeError('HF_TOKEN is missing; refusing to allocate paid GPU compute')
+          lock = json.loads(Path('locks/artifacts.lock.json').read_text())
+          item = lock['huggingface']['llama32_1b_instruct']
+          hf_hub_download(
+              repo_id=item['repo_id'],
+              filename='config.json',
+              revision=item['resolved_sha'],
+              token=token,
+          )
+          print(f"Frozen Llama access verified at {item['resolved_sha']}")
+          PY
+
+      - name: Verify calibration configuration
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          cfg = yaml.safe_load(Path('configs/benchmarks/tofu-llama32-1b-forget10.yaml').read_text())
+          assert cfg['replay_policies'] == ['slot_mask']
+          assert cfg['run_repacked_baseline'] is False
+          assert cfg['checkpoint_every'] == 0
+          assert len(cfg['forget_scenarios']) == 1
+          assert cfg['forget_scenarios'][0]['name'] == 'tofu-forget10'
+          assert cfg['plan']['microbatch_size'] == 8
+          assert cfg['plan']['grad_accum_steps'] == 4
+          print('Calibration configuration guard passed')
+          PY
+
+      - name: Generate ephemeral SSH key and token file
+        run: |
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+          TOKEN="${HF_TOKEN_PRIMARY:-$HF_TOKEN_ALT}"
+          test -n "$TOKEN"
+          umask 077
+          printf '%s' "$TOKEN" > .runpod/hf_token
+
+      - name: Allocate one guarded 48GB GPU Pod
+        id: pod
+        run: |
+          python scripts/runpod_control.py create \
+            --name "uas-tofu1b-cal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --public-key-file .runpod/id_ed25519.pub \
+            --gpu-types \
+              "NVIDIA RTX A6000" \
+              "NVIDIA A40" \
+            --max-hourly-cost "$MAX_HOURLY_COST" \
+            --wait-seconds 900 \
+            --output runpod-allocation.json
+          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSH daemon
+        run: |
+          for attempt in $(seq 1 90); do
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              "root@${{ steps.pod.outputs.host }}" 'echo ssh-ready'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become ready" >&2
+          exit 1
+
+      - name: Run one-update lifecycle and memory calibration
+        id: remote
+        continue-on-error: true
+        run: |
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            runpod-allocation.json .runpod/hf_token \
+            "root@${{ steps.pod.outputs.host }}:/workspace/"
+
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' MAX_CALIBRATION_MINUTES='${MAX_CALIBRATION_MINUTES}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          nohup bash -lc 'sleep 2700; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
+
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+          export HF_TOKEN="$(cat /workspace/hf_token)"
+          rm -f /workspace/hf_token
+          export HF_HUB_DISABLE_TELEMETRY=1
+          export TOKENIZERS_PARALLELISM=false
+          export PYTHONHASHSEED=2026
+          export CUBLAS_WORKSPACE_CONFIG=:4096:8
+
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+          exec > >(tee -a results/tofu-llama1b-calibration.log) 2>&1
+
+          python scripts/gpu_probe.py --output results/tofu-llama1b-gpu-probe.json
+          python scripts/bootstrap_upstreams.py
+          python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
+          python scripts/validate_release_data.py
+          python scripts/verify_release_lock.py
+
+          timeout --signal=TERM --kill-after=120s "${MAX_CALIBRATION_MINUTES}m" \
+            python scripts/gpu_phase_release_smoke.py \
+              --config configs/benchmarks/tofu-llama32-1b-forget10.yaml \
+              --output results/tofu-llama1b-phase-release-smoke.json
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          smoke = json.loads(Path('results/tofu-llama1b-phase-release-smoke.json').read_text())
+          probe = json.loads(Path('results/tofu-llama1b-gpu-probe.json').read_text())
+          allocation = json.loads(Path('results/runpod-allocation.json').read_text())
+          stats = smoke['one_update_stats']
+          one_update_seconds = float(stats['wall_seconds'])
+          updates_per_pass = 625
+          four_pass_training_seconds = one_update_seconds * updates_per_pass * 4
+          peak_ratio = float(smoke['peak_before_release_bytes']) / float(probe['total_memory_bytes'])
+          if peak_ratio >= 0.90:
+              raise RuntimeError(
+                  f'Calibration peak used {peak_ratio:.1%} of GPU memory; refusing to recommend a full run'
+              )
+          payload = {
+              'status': 'passed',
+              'gpu': probe['device_name'],
+              'gpu_total_memory_bytes': probe['total_memory_bytes'],
+              'peak_memory_bytes': smoke['peak_before_release_bytes'],
+              'peak_memory_fraction': peak_ratio,
+              'allocated_after_release_bytes': smoke['allocated_after_release_bytes'],
+              'allocated_after_second_release_bytes': smoke['allocated_after_second_release_bytes'],
+              'one_update_wall_seconds': one_update_seconds,
+              'updates_per_pass': updates_per_pass,
+              'planned_training_passes': 4,
+              'projected_four_pass_training_seconds_from_one_update': four_pass_training_seconds,
+              'projected_four_pass_gpu_cost_from_one_update': (
+                  float(allocation['cost_per_hr']) * four_pass_training_seconds / 3600.0
+              ),
+              'reported_hourly_gpu_cost': float(allocation['cost_per_hr']),
+              'note': 'Projection excludes model loading, hashing, data preparation, evidence packaging, and other phase overhead.',
+          }
+          Path('results/tofu-llama1b-calibration-report.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True), flush=True)
+          PY
+          REMOTE
+
+      - name: Collect calibration evidence
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          for file in \
+            tofu-llama1b-calibration.log \
+            tofu-llama1b-gpu-probe.json \
+            tofu-llama1b-phase-release-smoke.json \
+            tofu-llama1b-calibration-report.json; do
+            scp \
+              -i .runpod/id_ed25519 \
+              -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record calibration cost
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          mkdir -p gpu-artifacts
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from pathlib import Path
+          allocation = json.loads(Path('runpod-allocation.json').read_text())
+          elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
+          hourly = float(allocation['cost_per_hr'])
+          payload = {
+              'elapsed_seconds_until_cleanup': elapsed,
+              'reported_hourly_gpu_cost': hourly,
+              'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
+              'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
+              'calibration_only': True,
+          }
+          Path('gpu-artifacts/cost-estimate.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload calibration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-llama1b-calibration-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 6
+
+      - name: Enforce calibration success
+        if: always()
+        run: |
+          if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
+            echo 'TOFU Llama 1B calibration did not complete successfully.' >&2
+            exit 1
+          fi
+          test -f gpu-artifacts/tofu-llama1b-calibration-report.json
