@@ -1,0 +1,251 @@
+name: RunPod Pythia 2.8B full scaling experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-pythia-2.8b-full-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runpod-pythia-2.8b-full
+  cancel-in-progress: false
+
+jobs:
+  experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      MAX_HOURLY_COST: "2.00"
+      MAX_RUNTIME_MINUTES: "250"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify RunPod credential before allocating compute
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          python scripts/runpod_control.py auth-check
+
+      - name: Verify frozen four-pass release configuration
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          cfg = yaml.safe_load(Path('configs/pythia-2.8b-scaling.yaml').read_text())
+          assert cfg['model']['artifact_key'] == 'pythia_2_8b'
+          assert cfg['model']['dtype'] == 'bf16'
+          assert cfg['plan']['microbatch_size'] == 1
+          assert cfg['plan']['grad_accum_steps'] == 16
+          assert cfg['replay_policies'] == ['slot_mask']
+          assert cfg['run_repacked_baseline'] is False
+          assert len(cfg['forget_scenarios']) == 1
+          scenario = cfg['forget_scenarios'][0]
+          assert scenario['strategy'] == 'random'
+          assert float(scenario['fraction']) == 0.05
+          print('Frozen four-pass Pythia 2.8B release configuration verified')
+          PY
+
+      - name: Generate ephemeral SSH key
+        run: |
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+
+      - name: Allocate one guarded 80GB+ training Pod
+        id: pod
+        run: |
+          python scripts/runpod_control.py create \
+            --name "uas-pythia28-full-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --public-key-file .runpod/id_ed25519.pub \
+            --gpu-types \
+              "NVIDIA A100-SXM4-80GB" \
+              "NVIDIA A100 80GB PCIe" \
+              "NVIDIA H100 80GB HBM3" \
+              "NVIDIA H100 PCIe" \
+              "NVIDIA H100 NVL" \
+            --max-hourly-cost "$MAX_HOURLY_COST" \
+            --wait-seconds 900 \
+            --output runpod-allocation.json
+          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSH daemon
+        run: |
+          for attempt in $(seq 1 90); do
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              "root@${{ steps.pod.outputs.host }}" 'echo ssh-ready'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become ready" >&2
+          exit 1
+
+      - name: Run frozen Pythia 2.8B four-pass experiment
+        id: remote
+        continue-on-error: true
+        run: |
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=2 \
+            runpod-allocation.json \
+            "root@${{ steps.pod.outputs.host }}:/workspace/runpod-allocation.json"
+
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' MAX_RUNTIME_MINUTES='${MAX_RUNTIME_MINUTES}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          nohup bash -lc 'sleep 16200; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+          exec > >(tee -a results/pythia-2.8b-full.log) 2>&1
+
+          package_evidence() {
+            set +e
+            df -h > results/disk-after.txt 2>&1
+            python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import tarfile
+
+          run_root = Path('runs/pythia-2.8b')
+          results = Path('results')
+          bundle = results / 'pythia-2.8b-full-evidence.tar.gz'
+          include_result_names = {
+              'runpod-allocation.json',
+              'gpu-probe-2.8b-full.json',
+              'disk-before.txt',
+              'disk-after.txt',
+              'pythia-2.8b-full.log',
+          }
+          with tarfile.open(bundle, 'w:gz') as archive:
+              if run_root.exists():
+                  for path in sorted(run_root.rglob('*')):
+                      if not path.is_file():
+                          continue
+                      if 'redacted-data' in path.parts:
+                          continue
+                      if path.suffix in {'.pt', '.npy'}:
+                          continue
+                      archive.add(path, arcname=str(path))
+              for name in sorted(include_result_names):
+                  path = results / name
+                  if path.exists():
+                      archive.add(path, arcname=str(path))
+          digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+          (results / 'pythia-2.8b-full-evidence.sha256').write_text(
+              f'{digest}  {bundle.name}\n'
+          )
+          print(f'Evidence bundle SHA256: {digest}', flush=True)
+          PY
+          }
+          trap package_evidence EXIT
+
+          export HF_HUB_DISABLE_TELEMETRY=1
+          export TOKENIZERS_PARALLELISM=false
+          export PYTHONHASHSEED=2026
+          export CUBLAS_WORKSPACE_CONFIG=:4096:8
+          df -h > results/disk-before.txt
+          python scripts/gpu_probe.py --output results/gpu-probe-2.8b-full.json
+          python scripts/bootstrap_upstreams.py
+          python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
+          python scripts/validate_release_data.py
+          python scripts/verify_release_lock.py
+          timeout --signal=TERM --kill-after=180s "${MAX_RUNTIME_MINUTES}m" \
+            python scripts/run_release.py configs/pythia-2.8b-scaling.yaml
+          REMOTE
+
+      - name: Collect compact experiment evidence
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          for file in pythia-2.8b-full-evidence.tar.gz pythia-2.8b-full-evidence.sha256; do
+            scp \
+              -i .runpod/id_ed25519 \
+              -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              -o ConnectionAttempts=2 \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record bounded cost estimate
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          mkdir -p gpu-artifacts
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          allocation = json.loads(Path('runpod-allocation.json').read_text())
+          elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
+          hourly = float(allocation['cost_per_hr'])
+          payload = {
+              'elapsed_seconds_until_cleanup': elapsed,
+              'reported_hourly_gpu_cost': hourly,
+              'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
+              'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
+              'hard_experiment_runtime_minutes': int(os.environ['MAX_RUNTIME_MINUTES']),
+              'four_pass_design': True,
+          }
+          Path('gpu-artifacts/cost-estimate.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload full experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pythia-2.8b-full-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 60
+          compression-level: 0
+
+      - name: Enforce experiment success
+        if: always()
+        run: |
+          if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
+            echo "The remote Pythia 2.8B experiment did not complete successfully." >&2
+            exit 1
+          fi
+          test -f gpu-artifacts/pythia-2.8b-full-evidence.tar.gz
+          test -f gpu-artifacts/pythia-2.8b-full-evidence.sha256
