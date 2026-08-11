@@ -17,11 +17,11 @@ concurrency:
 jobs:
   calibrate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
       MAX_HOURLY_COST: "3.25"
-      MAX_RUNTIME_MINUTES: "45"
+      MAX_RUNTIME_MINUTES: "15"
     steps:
       - uses: actions/checkout@v4
 
@@ -82,6 +82,8 @@ jobs:
             -P "${{ steps.pod.outputs.port }}" \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=2 \
             runpod-allocation.json \
             "root@${{ steps.pod.outputs.host }}:/workspace/runpod-allocation.json"
 
@@ -95,7 +97,7 @@ jobs:
             "root@${{ steps.pod.outputs.host }}" \
             "REPO_SHA='${GITHUB_SHA}' MAX_RUNTIME_MINUTES='${MAX_RUNTIME_MINUTES}' bash -s" <<'REMOTE'
           set -Eeuo pipefail
-          nohup bash -lc 'sleep 3000; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
+          nohup bash -lc 'sleep 1200; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
           cd /workspace
           rm -rf unlearning
           git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
@@ -117,6 +119,12 @@ jobs:
           python scripts/verify_release_lock.py
           timeout --signal=TERM --kill-after=120s "${MAX_RUNTIME_MINUTES}m" \
             python scripts/calibrate_pythia_2_8b.py --updates 50
+          tar -czf results/pythia-2.8b-calibration-bundle.tar.gz \
+            -C results \
+            pythia-2.8b-calibration.json \
+            pythia-2.8b-calibration.log \
+            gpu-probe-2.8b.json \
+            runpod-allocation.json
           REMOTE
 
       - name: Collect calibration evidence
@@ -125,18 +133,15 @@ jobs:
         run: |
           mkdir -p gpu-artifacts
           cp runpod-allocation.json gpu-artifacts/
-          for file in \
-            pythia-2.8b-calibration.json \
-            pythia-2.8b-calibration.log \
-            gpu-probe-2.8b.json; do
-            scp \
-              -i .runpod/id_ed25519 \
-              -P "${{ steps.pod.outputs.port }}" \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
-              "gpu-artifacts/$file" || true
-          done
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=2 \
+            "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/pythia-2.8b-calibration-bundle.tar.gz" \
+            "gpu-artifacts/" || true
 
       - name: Terminate RunPod Pod
         if: always() && steps.pod.outputs.pod_id != ''
