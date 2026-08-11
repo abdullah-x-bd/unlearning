@@ -9,7 +9,16 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
 
     assert 'MAX_HOURLY_COST: "0.70"' in workflow
     assert 'POD_SELF_DESTRUCT_SECONDS: "14400"' in workflow
+    assert 'MIN_FREE_GPU_MIB: "45000"' in workflow
+    assert 'MAX_GPU_ALLOCATION_ATTEMPTS: "4"' in workflow
     assert '--gpu-types "NVIDIA RTX A6000"' in workflow
+    assert "Allocate one clean guarded RTX A6000 Pod" in workflow
+    assert "nvidia-smi --query-gpu=name,memory.total,memory.free" in workflow
+    assert "nvidia-smi --query-compute-apps=pid,used_memory" in workflow
+    assert "foreign_compute_processes_present=false" in workflow
+    assert "clean_gpu_gate=passed" in workflow
+    assert "Rejecting contaminated A6000 Pod" in workflow
+    assert "gpu-cleanliness-accepted.txt" in workflow
     assert "runpod_control.py delete" in workflow
     assert "tofu-openunlearning-evidence.tar.gz" in workflow
     assert "scripts/run_tofu_openunlearning_eval.sh" in workflow

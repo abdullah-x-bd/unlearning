@@ -24,6 +24,8 @@ jobs:
       HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
       MAX_HOURLY_COST: "0.70"
       POD_SELF_DESTRUCT_SECONDS: "14400"
+      MIN_FREE_GPU_MIB: "45000"
+      MAX_GPU_ALLOCATION_ATTEMPTS: "4"
     steps:
       - uses: actions/checkout@v4
 
@@ -40,15 +42,23 @@ jobs:
             pyyaml==6.0.2
           python scripts/runpod_control.py auth-check
           python scripts/preflight_tofu_openunlearning.py
-          python -m pip install --disable-pip-version-check --quiet \
-            --index-url https://download.pytorch.org/whl/cpu \
-            'torch==2.4.1'
-          python -m pip install --disable-pip-version-check --quiet 'lm-eval==0.4.11'
           python - <<'PY'
-          import torch
+          import accelerate
+          import huggingface_hub
           import lm_eval
+          import peft
+          import torch
+          import transformers
           from lm_eval.models.hf_vlms import HFLM
-          print(f'zero-cost evaluator import gate passed; torch={torch.__version__}; HFLM={HFLM.__name__}')
+          assert torch.__version__.startswith('2.4.1')
+          assert transformers.__version__ == '4.51.3'
+          assert accelerate.__version__ == '0.34.2'
+          assert huggingface_hub.__version__ == '0.36.0'
+          print(
+              'zero-cost evaluator import gate passed; '
+              f'torch={torch.__version__}; transformers={transformers.__version__}; '
+              f'HFLM={HFLM.__name__}'
+          )
           PY
 
       - name: Generate ephemeral SSH key and token file
@@ -60,21 +70,112 @@ jobs:
           umask 077
           printf '%s' "$TOKEN" > .runpod/hf_token
 
-      - name: Allocate one guarded RTX A6000 Pod
+      - name: Allocate one clean guarded RTX A6000 Pod
         id: pod
         run: |
-          python scripts/runpod_control.py create \
-            --name "uas-tofu-ou-eval-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
-            --public-key-file .runpod/id_ed25519.pub \
-            --gpu-types "NVIDIA RTX A6000" \
-            --max-hourly-cost "$MAX_HOURLY_COST" \
-            --wait-seconds 900 \
-            --output runpod-allocation.json
-          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+          set -Eeuo pipefail
+          accepted=0
+          for attempt in $(seq 1 "$MAX_GPU_ALLOCATION_ATTEMPTS"); do
+            echo "A6000 allocation attempt ${attempt}/${MAX_GPU_ALLOCATION_ATTEMPTS}"
+            rm -f runpod-allocation.json
+            python scripts/runpod_control.py create \
+              --name "uas-tofu-ou-eval-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-a${attempt}" \
+              --public-key-file .runpod/id_ed25519.pub \
+              --gpu-types "NVIDIA RTX A6000" \
+              --max-hourly-cost "$MAX_HOURLY_COST" \
+              --wait-seconds 900 \
+              --output runpod-allocation.json
+
+            readarray -t allocation < <(python - <<'PY'
+          import json
+          payload = json.load(open('runpod-allocation.json'))
+          print(payload['pod_id'])
+          print(payload['host'])
+          print(payload['port'])
+          PY
+            )
+            pod_id="${allocation[0]}"
+            host="${allocation[1]}"
+            port="${allocation[2]}"
+
+            ssh_ready=0
+            for ssh_attempt in $(seq 1 90); do
+              if ssh \
+                -i .runpod/id_ed25519 \
+                -p "$port" \
+                -o StrictHostKeyChecking=no \
+                -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=5 \
+                "root@$host" 'echo ssh-ready'; then
+                ssh_ready=1
+                break
+              fi
+              sleep 5
+            done
+
+            if [[ "$ssh_ready" != "1" ]]; then
+              echo "Rejecting Pod $pod_id because SSH never became ready" >&2
+              python scripts/runpod_control.py delete --pod-id "$pod_id" || true
+              sleep 3
+              continue
+            fi
+
+            clean_log=".runpod/gpu-cleanliness-attempt-${attempt}.txt"
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "$port" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              "root@$host" \
+              "MIN_FREE_GPU_MIB='$MIN_FREE_GPU_MIB' bash -s" <<'REMOTE' | tee "$clean_log"
+          set -Eeuo pipefail
+          gpu_line="$(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits | head -n 1)"
+          gpu_name="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/^ +| +$/, "", $1); print $1}')"
+          total_mib="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/ /, "", $2); print $2}')"
+          free_mib="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/ /, "", $3); print $3}')"
+          compute_apps="$(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null | sed '/^[[:space:]]*$/d' || true)"
+          echo "gpu_name=$gpu_name"
+          echo "total_mib=$total_mib"
+          echo "free_mib=$free_mib"
+          echo "minimum_free_mib=$MIN_FREE_GPU_MIB"
+          if [[ -n "$compute_apps" ]]; then
+            echo "foreign_compute_processes_present=true"
+            printf '%s\n' "$compute_apps"
+            exit 42
+          fi
+          echo "foreign_compute_processes_present=false"
+          if (( free_mib < MIN_FREE_GPU_MIB )); then
+            echo "GPU rejected: only ${free_mib} MiB free" >&2
+            exit 43
+          fi
+          if [[ "$gpu_name" != "NVIDIA RTX A6000" ]]; then
+            echo "GPU rejected: unexpected device $gpu_name" >&2
+            exit 44
+          fi
+          echo "clean_gpu_gate=passed"
+          REMOTE
+            then
+              cp "$clean_log" .runpod/gpu-cleanliness-accepted.txt
+              echo "Accepted clean A6000 Pod $pod_id"
+              echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+              accepted=1
+              break
+            fi
+
+            echo "Rejecting contaminated A6000 Pod $pod_id before model load" >&2
+            python scripts/runpod_control.py delete --pod-id "$pod_id" || true
+            sleep 3
+          done
+
+          if [[ "$accepted" != "1" ]]; then
+            echo "Could not obtain a clean RTX A6000 after ${MAX_GPU_ALLOCATION_ATTEMPTS} attempts" >&2
+            exit 1
+          fi
 
       - name: Wait for SSH daemon
         run: |
-          for attempt in $(seq 1 90); do
+          for attempt in $(seq 1 30); do
             if ssh \
               -i .runpod/id_ed25519 \
               -p "${{ steps.pod.outputs.port }}" \
@@ -86,7 +187,7 @@ jobs:
             fi
             sleep 5
           done
-          echo "SSH did not become ready" >&2
+          echo "SSH was lost after clean-GPU acceptance" >&2
           exit 1
 
       - name: Reconstruct canonical states and run pinned OpenUnlearning evaluation
@@ -145,6 +246,7 @@ jobs:
         run: |
           mkdir -p gpu-artifacts
           cp runpod-allocation.json gpu-artifacts/
+          cp .runpod/gpu-cleanliness-accepted.txt gpu-artifacts/ || true
           for file in tofu-openunlearning-evidence.tar.gz tofu-openunlearning-evidence.sha256; do
             scp \
               -i .runpod/id_ed25519 \
@@ -224,6 +326,7 @@ jobs:
               'training_passes': 2,
               'benchmark': 'OpenUnlearning TOFU forget10',
               'attention_implementation': 'eager',
+              'minimum_free_gpu_mib_at_acceptance': int(os.environ['MIN_FREE_GPU_MIB']),
           }
           Path('gpu-artifacts/cost-estimate.json').write_text(
               json.dumps(payload, indent=2, sort_keys=True) + '\n'
