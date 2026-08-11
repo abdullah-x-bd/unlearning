@@ -1,0 +1,59 @@
+name: Temporary RunPod status probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-runpod-status-v1
+
+permissions:
+  contents: write
+
+jobs:
+  status:
+    runs-on: ubuntu-24.04
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Read current research Pod status
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+          req = urllib.request.Request(
+              'https://rest.runpod.io/v1/pods',
+              headers={'Authorization': f"Bearer {os.environ['RUNPOD_API_KEY']}"},
+          )
+          with urllib.request.urlopen(req, timeout=30) as response:
+              pods = json.load(response)
+          rows = []
+          for pod in pods:
+              if not str(pod.get('name', '')).startswith('uas-pythia160-'):
+                  continue
+              gpu = pod.get('gpu') or {}
+              machine = pod.get('machine') or {}
+              rows.append({
+                  'id': pod.get('id'),
+                  'name': pod.get('name'),
+                  'desiredStatus': pod.get('desiredStatus'),
+                  'adjustedCostPerHr': pod.get('adjustedCostPerHr'),
+                  'costPerHr': pod.get('costPerHr'),
+                  'gpu': gpu.get('displayName') or machine.get('gpuDisplayName') or machine.get('gpuTypeId'),
+                  'cloudType': pod.get('cloudType'),
+                  'createdAt': pod.get('createdAt'),
+              })
+          Path('gpu/runpod-status-v1.json').write_text(json.dumps({'pods': rows}, indent=2, sort_keys=True) + '\n')
+          PY
+      - name: Persist sanitized status
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gpu/runpod-status-v1.json
+          git commit -m 'Record current guarded RunPod status' || exit 0
+          git push origin HEAD:main
