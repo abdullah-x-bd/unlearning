@@ -14,6 +14,12 @@ TOFU_SPLITS = {
     "forget10": ("holdout10", "retain90"),
 }
 
+RETAIN_LOCK_KEYS = {
+    "retain99": "tofu_llama32_1b_retain99_reference",
+    "retain95": "tofu_llama32_1b_retain95_reference",
+    "retain90": "tofu_llama32_1b_retain90_reference",
+}
+
 
 def load_upstream(lock_path: Path, name: str = "open_unlearning") -> tuple[Path, str]:
     payload = yaml.safe_load(lock_path.read_text())
@@ -48,14 +54,41 @@ def tofu_model_overrides(checkpoint: str | Path, attention_implementation: str) 
     ]
 
 
+def pinned_retain_reference(args: argparse.Namespace, retain_split: str, retain_dir: Path) -> tuple[str, dict]:
+    if args.retain_checkpoint:
+        path = str(Path(args.retain_checkpoint).resolve())
+        return path, {"kind": "explicit_local_checkpoint", "path": path}
+
+    lock = json.loads(Path(args.artifact_lock).read_text())
+    key = RETAIN_LOCK_KEYS[retain_split]
+    item = lock["huggingface"][key]
+    provenance = {
+        "kind": "pinned_huggingface_snapshot",
+        "artifact_key": key,
+        "repo_id": item["repo_id"],
+        "revision": item["resolved_sha"],
+    }
+    local_dir = (retain_dir / "checkpoint").resolve()
+    if args.dry_run:
+        provenance["planned_local_dir"] = str(local_dir)
+        return str(local_dir), provenance
+
+    from huggingface_hub import snapshot_download
+
+    snapshot_download(
+        repo_id=item["repo_id"],
+        revision=item["resolved_sha"],
+        local_dir=local_dir,
+    )
+    provenance["local_dir"] = str(local_dir)
+    return str(local_dir), provenance
+
+
 def tofu_eval(args: argparse.Namespace) -> None:
     checkout, commit = load_upstream(Path(args.upstreams))
     holdout_split, retain_split = TOFU_SPLITS[args.forget_split]
-    retain_model = (
-        args.retain_checkpoint
-        or f"open-unlearning/tofu_{args.model}_{retain_split}"
-    )
     retain_dir = Path(args.output_root) / "reference" / retain_split
+    retain_model, retain_provenance = pinned_retain_reference(args, retain_split, retain_dir)
     retain_log = retain_dir / "TOFU_EVAL.json"
     commands: list[list[str]] = []
 
@@ -104,7 +137,7 @@ def tofu_eval(args: argparse.Namespace) -> None:
             "forget_split": args.forget_split,
             "holdout_split": holdout_split,
             "retain_split": retain_split,
-            "retain_reference": retain_model,
+            "retain_reference": retain_provenance,
             "attention_implementation": args.attention_implementation,
             "tokenizer_source": "same checkpoint as each evaluated model",
             "commands": commands,
@@ -114,7 +147,7 @@ def tofu_eval(args: argparse.Namespace) -> None:
 
 def tofu_baselines(args: argparse.Namespace) -> None:
     checkout, commit = load_upstream(Path(args.upstreams))
-    holdout_split, retain_split = TOFU_SPLITS[args.forget_split]
+    _, retain_split = TOFU_SPLITS[args.forget_split]
     methods = args.methods or ["GradAscent", "GradDiff", "NPO", "SimNPO"]
     model_path = (
         str(Path(args.target_checkpoint).resolve())
@@ -155,33 +188,12 @@ def tofu_baselines(args: argparse.Namespace) -> None:
         run(command, checkout, args.dry_run)
         manifest["commands"].append(command)
 
-        eval_command = [
-            "python",
-            "src/eval.py",
-            "--config-name=eval.yaml",
-            "experiment=eval/tofu/default",
-            f"forget_split={args.forget_split}",
-            f"holdout_split={holdout_split}",
-            f"model={args.model}",
-            f"task_name={task}",
-            f"model.model_args.pretrained_model_name_or_path=saves/unlearn/{task}",
-            f"paths.output_dir=saves/unlearn/{task}/evals",
-            f"retain_logs_path={retain_logs}",
-        ]
-        run(eval_command, checkout, args.dry_run)
-        manifest["commands"].append(eval_command)
-
-    save_manifest(
-        Path(args.output_root) / "official_baselines_manifest.json", manifest
-    )
+    save_manifest(Path(args.output_root) / "official_baselines_manifest.json", manifest)
 
 
 def muse(args: argparse.Namespace) -> None:
     checkout, commit = load_upstream(Path(args.upstreams))
     methods = args.methods or ["GradAscent", "GradDiff", "NPO", "SimNPO"]
-    retain_logs = (
-        f"saves/eval/muse_Llama-2-7b-hf_{args.data_split}_retrain/MUSE_EVAL.json"
-    )
     payload = {
         "framework": "OpenUnlearning",
         "framework_commit": commit,
@@ -192,53 +204,18 @@ def muse(args: argparse.Namespace) -> None:
         "budget_dependent": True,
         "commands": [],
     }
-
-    for method in methods:
-        task = f"uas_muse_Llama-2-7b-hf_{args.data_split}_{method}"
-        command = [
-            "python",
-            "src/train.py",
-            "--config-name=unlearn.yaml",
-            "experiment=unlearn/muse/default",
-            "model=Llama-2-7b-hf",
-            f"data_split={args.data_split}",
-            f"trainer={method}",
-            f"task_name={task}",
-            f"retain_logs_path={retain_logs}",
-        ]
-        payload["commands"].append(command)
-        run(command, checkout, args.dry_run)
-
-        eval_command = [
-            "python",
-            "src/eval.py",
-            "--config-name=eval.yaml",
-            "experiment=eval/muse/default",
-            f"data_split={args.data_split}",
-            f"task_name={task}",
-            "model=Llama-2-7b-hf",
-            f"model.model_args.pretrained_model_name_or_path=saves/unlearn/{task}",
-            f"paths.output_dir=saves/unlearn/{task}/evals",
-            f"retain_logs_path={retain_logs}",
-        ]
-        payload["commands"].append(eval_command)
-        run(eval_command, checkout, args.dry_run)
-
     save_manifest(Path(args.output_root) / "muse_manifest.json", payload)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Pinned OpenUnlearning interoperability adapter"
-    )
+    parser = argparse.ArgumentParser(description="Pinned OpenUnlearning interoperability adapter")
     parser.add_argument("--upstreams", default="external/upstreams.lock.yaml")
+    parser.add_argument("--artifact-lock", default="locks/artifacts.lock.json")
     sub = parser.add_subparsers(dest="command", required=True)
 
     ev = sub.add_parser("tofu-eval")
     ev.add_argument("--checkpoint", required=True)
-    ev.add_argument(
-        "--forget-split", choices=sorted(TOFU_SPLITS), required=True
-    )
+    ev.add_argument("--forget-split", choices=sorted(TOFU_SPLITS), required=True)
     ev.add_argument("--model", default="Llama-3.2-1B-Instruct")
     ev.add_argument("--retain-checkpoint")
     ev.add_argument("--task-name")
@@ -253,9 +230,7 @@ def main() -> None:
     ev.set_defaults(func=tofu_eval)
 
     bl = sub.add_parser("tofu-baselines")
-    bl.add_argument(
-        "--forget-split", choices=sorted(TOFU_SPLITS), required=True
-    )
+    bl.add_argument("--forget-split", choices=sorted(TOFU_SPLITS), required=True)
     bl.add_argument("--model", default="Llama-3.2-1B-Instruct")
     bl.add_argument("--methods", nargs="+")
     bl.add_argument("--target-checkpoint")
