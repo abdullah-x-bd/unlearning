@@ -1,17 +1,20 @@
 {
-  "pods": [
-    {
-      "costPerHr": 0.53,
-      "createdAt": "2026-08-11 15:39:33.413 +0000 UTC",
-      "desiredStatus": "RUNNING",
-      "gpu": null,
-      "id": "yrjqmd8lqqzr6t",
-      "name": "uas-tofu-ou-eval-31508197933-1"
-    }
-  ],
+  "pods": [],
   "runs": [
     {
       "conclusion": null,
+      "created_at": "2026-08-11T16:56:39Z",
+      "event": "push",
+      "head_sha": "6367e9de53f3ac125d98023b3ecdfffaa8fe529e",
+      "html_url": "https://github.com/abdullah-x-bd/unlearning/actions/runs/31515039633",
+      "id": 31515039633,
+      "run_attempt": 1,
+      "run_number": 2,
+      "status": "in_progress",
+      "updated_at": "2026-08-11T16:56:42Z"
+    },
+    {
+      "conclusion": "failure",
       "created_at": "2026-08-11T15:39:13Z",
       "event": "push",
       "head_sha": "563b2e4cc1e1f5813586e2b91e9d5bb27514c4b9",
@@ -19,8 +22,8 @@
       "id": 31508197933,
       "run_attempt": 1,
       "run_number": 1,
-      "status": "in_progress",
-      "updated_at": "2026-08-11T15:39:22Z"
+      "status": "completed",
+      "updated_at": "2026-08-11T16:41:33Z"
     }
   ]
 }
