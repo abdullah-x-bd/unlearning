@@ -1,1 +1,1 @@
-One-shot trigger for guarded Pythia 2.8B H100 calibration after successful CI and CPU preflight.
+Attempt 2 trigger for guarded Pythia 2.8B calibration with H100-first 80GB+ fallback capacity.
