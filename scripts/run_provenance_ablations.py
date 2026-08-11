@@ -17,7 +17,7 @@ from unlearning_at_scale.state import load_checkpoint, model_sha256, optimizer_s
 from unlearning_at_scale.training import TraceRunner, create_optimizer
 
 
-def new_model_optimizer(config: dict):
+def new_model_optimizer(config: dict, device: torch.device):
     model_cfg = config["model"]
     model, tokenizer = load_causal_lm(
         model_cfg["name"],
@@ -25,6 +25,7 @@ def new_model_optimizer(config: dict):
         attention_implementation=model_cfg.get("attention_implementation", "eager"),
         disable_dropout=bool(model_cfg.get("disable_dropout", False)),
     )
+    model.to(device)
     opt_cfg = config["optimizer"]
     optimizer = create_optimizer(
         model,
@@ -57,7 +58,7 @@ def main() -> None:
 
     rows = []
     for name in args.ablations:
-        model, tokenizer, optimizer = new_model_optimizer(config)
+        model, tokenizer, optimizer = new_model_optimizer(config, device)
         load_checkpoint(base, model, optimizer, map_location=device)
         altered = ablate_plan(plan, name)
         stats = TraceRunner(model, optimizer, store, device=device, dtype=config["model"].get("dtype", "fp32")).run(altered)
