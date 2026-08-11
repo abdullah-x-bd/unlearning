@@ -1,0 +1,27 @@
+{
+  "cublas_workspace_config": ":4096:8",
+  "cuda": "12.4",
+  "cuda_available": true,
+  "cudnn": 90100,
+  "deterministic_algorithms": true,
+  "devices": [
+    {
+      "capability": [8, 0],
+      "index": 0,
+      "name": "NVIDIA A100-SXM4-80GB",
+      "total_memory": 84974239744
+    }
+  ],
+  "git_commit": "139688d1c5262ed680b7c42b6e2f4222a34a136d",
+  "packages": {
+    "PyYAML": "6.0.2",
+    "datasets": "3.0.1",
+    "numpy": "2.2.3",
+    "peft": null,
+    "torch": "2.4.1+cu124",
+    "transformers": "4.51.3"
+  },
+  "platform": "Linux-6.8.0-52-generic-x86_64-with-glibc2.35",
+  "python": "3.11.10 (main, Sep  7 2024, 18:35:41) [GCC 11.4.0]",
+  "torch": "2.4.1+cu124"
+}
