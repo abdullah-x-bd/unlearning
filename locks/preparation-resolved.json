@@ -1,0 +1,6 @@
+{
+  "pythia_160m": {"kind": "model", "repo_id": "EleutherAI/pythia-160m", "requested_revision": "step143000", "resolved_sha": "b56d9bee36300031aeea723b73c4d62ac7fa71a2"},
+  "tofu": {"kind": "dataset", "repo_id": "locuslab/TOFU", "requested_revision": "324592d", "resolved_sha": "324592d84ae4f482ac7249b9285c2ecdb53e3a68"},
+  "tofu_llama32_1b_full_reference": {"kind": "model", "repo_id": "open-unlearning/tofu_Llama-3.2-1B-Instruct_full", "requested_revision": "88e3120", "resolved_sha": "88e31200b97e4c0c04ae0d2f0b591f427046d192"},
+  "wikitext": {"kind": "dataset", "repo_id": "Salesforce/wikitext", "requested_revision": "b08601e", "resolved_sha": "b08601e04326c79dfdd32d625aee71d232d685c3"}
+}
