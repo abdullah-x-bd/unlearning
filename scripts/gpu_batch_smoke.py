@@ -10,6 +10,7 @@ import torch
 
 from unlearning_at_scale.dataset import TokenStore
 from unlearning_at_scale.plan import MicrobatchSpec
+from unlearning_at_scale.state import save_checkpoint
 from unlearning_at_scale.training import TraceRunner, create_optimizer
 
 
@@ -65,7 +66,25 @@ def main() -> None:
         if not all(torch.isfinite(parameter).all().item() for parameter in model.parameters()):
             raise RuntimeError("Non-finite parameter detected after CUDA smoke update")
 
-        print(json.dumps({"cuda_batch_smoke": "passed", "stats": stats.to_dict()}, indent=2))
+        checkpoint = save_checkpoint(
+            directory / "cuda-smoke-checkpoint.pt",
+            model,
+            optimizer,
+            next_optimizer_step=1,
+        )
+        if len(checkpoint["model_sha256"]) != 64 or len(checkpoint["optimizer_sha256"]) != 64:
+            raise RuntimeError("CUDA smoke checkpoint hashes were not valid SHA-256 digests")
+
+        print(
+            json.dumps(
+                {
+                    "cuda_batch_smoke": "passed",
+                    "stats": stats.to_dict(),
+                    "checkpoint": checkpoint,
+                },
+                indent=2,
+            )
+        )
 
 
 if __name__ == "__main__":
