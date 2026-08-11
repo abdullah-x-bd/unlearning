@@ -3,6 +3,18 @@
   "runs": [
     {
       "conclusion": null,
+      "created_at": "2026-08-11T17:04:46Z",
+      "event": "push",
+      "head_sha": "397f935bc6bbdbb2b8101b629b626fa289f73b2f",
+      "html_url": "https://github.com/abdullah-x-bd/unlearning/actions/runs/31515730322",
+      "id": 31515730322,
+      "run_attempt": 1,
+      "run_number": 3,
+      "status": "in_progress",
+      "updated_at": "2026-08-11T17:04:49Z"
+    },
+    {
+      "conclusion": "failure",
       "created_at": "2026-08-11T16:56:39Z",
       "event": "push",
       "head_sha": "6367e9de53f3ac125d98023b3ecdfffaa8fe529e",
@@ -10,8 +22,8 @@
       "id": 31515039633,
       "run_attempt": 1,
       "run_number": 2,
-      "status": "in_progress",
-      "updated_at": "2026-08-11T16:56:42Z"
+      "status": "completed",
+      "updated_at": "2026-08-11T16:57:26Z"
     },
     {
       "conclusion": "failure",
