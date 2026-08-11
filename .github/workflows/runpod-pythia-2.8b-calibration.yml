@@ -39,13 +39,18 @@ jobs:
           mkdir -p .runpod
           ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
 
-      - name: Allocate one guarded H100 80GB Pod
+      - name: Allocate one guarded 80GB+ training Pod
         id: pod
         run: |
           python scripts/runpod_control.py create \
             --name "uas-pythia28-cal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --public-key-file .runpod/id_ed25519.pub \
-            --gpu-types "NVIDIA H100 80GB HBM3" "NVIDIA H100 PCIe" \
+            --gpu-types \
+              "NVIDIA H100 80GB HBM3" \
+              "NVIDIA H100 PCIe" \
+              "NVIDIA H100 NVL" \
+              "NVIDIA A100-SXM4-80GB" \
+              "NVIDIA A100 80GB PCIe" \
             --max-hourly-cost "$MAX_HOURLY_COST" \
             --wait-seconds 900 \
             --output runpod-allocation.json
