@@ -21,17 +21,34 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Read current research Pod status
+      - name: Read current research Pod status and utilization
         run: |
           python - <<'PY'
           import json, os, urllib.request
           from pathlib import Path
-          req = urllib.request.Request(
+
+          rest_req = urllib.request.Request(
               'https://rest.runpod.io/v1/pods',
               headers={'Authorization': f"Bearer {os.environ['RUNPOD_API_KEY']}"},
           )
-          with urllib.request.urlopen(req, timeout=30) as response:
+          with urllib.request.urlopen(rest_req, timeout=30) as response:
               pods = json.load(response)
+
+          gql = {
+              'query': '''query { myself { pods { id name runtime { uptimeInSeconds gpus { id gpuUtilPercent memoryUtilPercent } container { cpuPercent memoryPercent } } } } }'''
+          }
+          gql_req = urllib.request.Request(
+              f"https://api.runpod.io/graphql?api_key={os.environ['RUNPOD_API_KEY']}",
+              data=json.dumps(gql).encode(),
+              headers={'Content-Type': 'application/json'},
+          )
+          with urllib.request.urlopen(gql_req, timeout=30) as response:
+              gql_payload = json.load(response)
+          runtime_by_id = {
+              p['id']: p.get('runtime')
+              for p in ((gql_payload.get('data') or {}).get('myself') or {}).get('pods', [])
+          }
+
           rows = []
           for pod in pods:
               if not str(pod.get('name', '')).startswith('uas-pythia160-'):
@@ -47,6 +64,7 @@ jobs:
                   'gpu': gpu.get('displayName') or machine.get('gpuDisplayName') or machine.get('gpuTypeId'),
                   'cloudType': pod.get('cloudType'),
                   'createdAt': pod.get('createdAt'),
+                  'runtime': runtime_by_id.get(pod.get('id')),
               })
           Path('gpu/runpod-status-v1.json').write_text(json.dumps({'pods': rows}, indent=2, sort_keys=True) + '\n')
           PY
