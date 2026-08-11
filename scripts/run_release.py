@@ -7,8 +7,9 @@ from pathlib import Path
 
 import yaml
 
+from unlearning_at_scale import experiment
 from unlearning_at_scale.artifacts import revision_from_lock, verify_lock
-from unlearning_at_scale.experiment import run_experiment
+from unlearning_at_scale.lifecycle import release_phase
 
 
 def resolve_config(config: dict, lock_path: str) -> dict:
@@ -31,7 +32,8 @@ def main() -> None:
     args = parser.parse_args()
     verify_lock(args.sources, args.lock)
     config = yaml.safe_load(Path(args.config).read_text())
-    result = run_experiment(resolve_config(config, args.lock))
+    experiment._release = release_phase
+    result = experiment.run_experiment(resolve_config(config, args.lock))
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
