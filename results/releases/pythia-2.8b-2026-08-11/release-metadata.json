@@ -1,0 +1,26 @@
+{
+  "experiment_head_sha": "139688d1c5262ed680b7c42b6e2f4222a34a136d",
+  "github_actions_artifact": {
+    "digest": "sha256:50f7e82eed8d23ad64aa431d27f9dd91e400718f863860118f016b249de5d9c5",
+    "id": 9097605754,
+    "name": "pythia-2.8b-full-evidence",
+    "retention_expires_at": "2026-10-10T10:24:39Z",
+    "size_bytes": 2074539
+  },
+  "internal_evidence_tar": {
+    "name": "pythia-2.8b-full-evidence.tar.gz",
+    "sha256": "a16909e4f67967b3c77a2bef215ef680a59d33229807ca36054b2160ed77840c"
+  },
+  "release_name": "pythia-2.8b-2026-08-11",
+  "runpod": {
+    "cloud_type": "SECURE",
+    "elapsed_seconds_until_cleanup": 13169.826914072037,
+    "estimated_gpu_cost_until_cleanup_usd": 5.816673553715149,
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "pod_id": "s4rq4eva3942hz",
+    "reported_hourly_gpu_cost_usd": 1.59,
+    "terminated_cleanly": true
+  },
+  "workflow_job_id": 93699572508,
+  "workflow_run_id": 31466226471
+}
