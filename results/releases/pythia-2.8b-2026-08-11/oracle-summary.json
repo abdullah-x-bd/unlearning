@@ -1,0 +1,16 @@
+{
+  "checkpoint_path": "runs/pythia-2.8b/original/checkpoints/step-000000.pt",
+  "checkpoint_step": 0,
+  "final_model_state_bytes": 11100994406,
+  "model_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+  "optimizer_sha256": "e7c6cce3619f0557275c8ae8e6a5db3b1e001ab868d844003c1ba17a1144ba89",
+  "stats": {
+    "applied_updates": 1266,
+    "logical_steps_seen": 1266,
+    "retained_examples": 19243,
+    "retained_tokens": 1800980,
+    "skipped_updates": 0,
+    "summed_training_loss": 4498091.953546286,
+    "wall_seconds": 2978.8683431893587
+  }
+}
