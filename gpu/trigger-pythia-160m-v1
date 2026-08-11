@@ -1,1 +1,1 @@
-Attempt 2: rerun the guarded Pythia 160M release after fixing complete TokenBatch device transfer and adding a CUDA batch smoke gate.
+Attempt 3: rerun the guarded Pythia 160M release after fixing scalar optimizer-state hashing and extending the CUDA smoke gate through checkpoint serialization.
