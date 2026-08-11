@@ -1,0 +1,11 @@
+{
+  "count": 1013,
+  "fraction": 0.05,
+  "forget_ids_file_bytes": 16268,
+  "forget_ids_file_sha256": "305630144187ff741ee1f017d2361396397cacf6e0674d4739295ba73461a3c3",
+  "plan_sha256": "17ae171925ebd4b9c1beb393c7887d14b96ca09790da0b59a521fdf60198c431",
+  "scenario_index": 0,
+  "scenario_name": "random-5pct",
+  "selection_seed": 2126,
+  "strategy": "random"
+}
