@@ -1,0 +1,26 @@
+{
+  "artifact_zip_sha256": "6a1381c76bec90233d5e4d1dde3fc43362405ed6bbd6d4378f709cdbf3634d8d",
+  "files": [
+    {"bytes": 1151, "path": "runs/tofu-llama32-1b-forget10/config.resolved.json", "sha256": "7afaf675d35059afc7a61fe188ae6e12b31302bf0f3e99f99ad33ff0b6e738cf"},
+    {"bytes": 693, "path": "runs/tofu-llama32-1b-forget10/environment.json", "sha256": "fca7347e7d0711fdde5a53eebfdca1d14449f92ba3863f067f9d03b03e605318"},
+    {"bytes": 822944, "path": "runs/tofu-llama32-1b-forget10/execution_plan.jsonl", "sha256": "466595193cba55c4cf408b5d5c7d679d6d93bcd73dc11a8b356ac2c716c282da"},
+    {"bytes": 9200, "path": "runs/tofu-llama32-1b-forget10/forget/tofu-forget10/forget_ids.txt", "sha256": "dc1f259e1c930087b81fc2c82ac38345a6ff1097760137bbb366a4f62230dc3d"},
+    {"bytes": 587, "path": "runs/tofu-llama32-1b-forget10/forget/tofu-forget10/oracle/summary.json", "sha256": "e3b6a69b167181cb2786cbd4e7f40b1beb63e0c84419119ea712c6a82239cbc2"},
+    {"bytes": 858, "path": "runs/tofu-llama32-1b-forget10/forget/tofu-forget10/replay-slot_mask/summary.json", "sha256": "ef96061c1603b424d1c7c43ca806db42643e15924fc892c40cbe65226678d7e1"},
+    {"bytes": 1365, "path": "runs/tofu-llama32-1b-forget10/forget/tofu-forget10/summary.json", "sha256": "e0192cc1e46f0ff89f6b9a2be4bcac7f9a0ed94f2216a1e631e87650ef31f19b"},
+    {"bytes": 878890, "path": "runs/tofu-llama32-1b-forget10/original/manifest.jsonl", "sha256": "827a6d93abea44794315d15f80ba91fda5a8910c97323d817d8a332fa327062d"},
+    {"bytes": 65, "path": "runs/tofu-llama32-1b-forget10/original/manifest.jsonl.sha256", "sha256": "f78faeee6631c458ea2f7fe373a060dcf77dde2c34594bda85221a2b4e1ec16f"},
+    {"bytes": 1257, "path": "runs/tofu-llama32-1b-forget10/original/summary.json", "sha256": "4e1bbd5ca71b519aed962eebb2c71dc9e8d1b0f720f41581407960e33f9fcfb3"},
+    {"bytes": 80000, "path": "runs/tofu-llama32-1b-forget10/original/trace.wal", "sha256": "d5764f139c53b87ac751bd1c07cfb8ce80cbba0c2286dc3a68940dd0ae020c71"},
+    {"bytes": 65, "path": "runs/tofu-llama32-1b-forget10/original/trace.wal.sha256", "sha256": "de209f1b70e494911332f34eeb44c96781c73eaf3ce448e6886b7c2370d6945b"},
+    {"bytes": 665, "path": "runs/tofu-llama32-1b-forget10/preflight/gpu-phase-release-smoke.json", "sha256": "65b161f84bc4f480981983bee8318705cd15fafc2342116cff57a38670172f2a"},
+    {"bytes": 842, "path": "runs/tofu-llama32-1b-forget10/replay-identity/summary.json", "sha256": "c28218a35907b93d8edbe7d62fae20aa016da934be34e6d2bd12d34fe431716a"},
+    {"bytes": 3976, "path": "runs/tofu-llama32-1b-forget10/summary.json", "sha256": "4d03962903e3069449f322a8cb00c2ec7c55d26dd565bb2d83c9ec5c01cf4065"},
+    {"bytes": 819, "path": "results/disk-after.txt", "sha256": "35f9113538a72d3d6e0a21df918186b1239d8b9cd7d4dee12d27cd20d958f578"},
+    {"bytes": 819, "path": "results/disk-before.txt", "sha256": "e95794770df328bc700a7608b6636f8b4cc2f00ccb3b1e4feff8a4621329dd87"},
+    {"bytes": 2524, "path": "results/runpod-allocation.json", "sha256": "90b13a94ca3e7fe87010fb4b6a808e11cb1f170e34f2f35d27811a7ed3a6c63a"},
+    {"bytes": 20947, "path": "results/tofu-llama1b-full.log", "sha256": "718f7b2e2408624b0b772c8a2a7d6127d0e07321a5ba73c323b9b840c3caeadc"},
+    {"bytes": 623, "path": "results/tofu-llama1b-gpu-probe.json", "sha256": "3a5983c1376bcd2e7889b8ee3a92c62560e6f08f28e476e4f71168fbce45f77d"}
+  ],
+  "internal_tar_sha256": "ac2fc36426c2b1fc91286c370956d48f061603ea1922ecabeda5f86faf832470"
+}

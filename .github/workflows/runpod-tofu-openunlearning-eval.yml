@@ -1,0 +1,203 @@
+name: RunPod TOFU OpenUnlearning evaluation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-tofu-openunlearning-eval-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runpod-tofu-openunlearning-eval
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      HF_TOKEN_PRIMARY: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
+      MAX_HOURLY_COST: "0.70"
+      POD_SELF_DESTRUCT_SECONDS: "14400"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zero-cost credential, artifact, and evaluator preflight
+        run: |
+          set -Eeuo pipefail
+          test -n "$RUNPOD_API_KEY"
+          python -m pip install --disable-pip-version-check --quiet \
+            huggingface_hub==0.36.0 \
+            pyyaml==6.0.2
+          python scripts/runpod_control.py auth-check
+          python scripts/preflight_tofu_openunlearning.py
+
+      - name: Generate ephemeral SSH key and token file
+        run: |
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+          TOKEN="${HF_TOKEN_PRIMARY:-$HF_TOKEN_ALT}"
+          test -n "$TOKEN"
+          umask 077
+          printf '%s' "$TOKEN" > .runpod/hf_token
+
+      - name: Allocate one guarded RTX A6000 Pod
+        id: pod
+        run: |
+          python scripts/runpod_control.py create \
+            --name "uas-tofu-ou-eval-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --public-key-file .runpod/id_ed25519.pub \
+            --gpu-types "NVIDIA RTX A6000" \
+            --max-hourly-cost "$MAX_HOURLY_COST" \
+            --wait-seconds 900 \
+            --output runpod-allocation.json
+          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSH daemon
+        run: |
+          for attempt in $(seq 1 90); do
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              "root@${{ steps.pod.outputs.host }}" 'echo ssh-ready'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become ready" >&2
+          exit 1
+
+      - name: Reconstruct canonical states and run pinned OpenUnlearning evaluation
+        id: remote
+        continue-on-error: true
+        run: |
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=2 \
+            runpod-allocation.json .runpod/hf_token \
+            "root@${{ steps.pod.outputs.host }}:/workspace/"
+
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' SELF_DESTRUCT='${POD_SELF_DESTRUCT_SECONDS}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          nohup bash -lc "sleep ${SELF_DESTRUCT}; runpodctl pod delete \$RUNPOD_POD_ID" \
+            >/tmp/uas-self-destruct.log 2>&1 &
+
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+          export HF_TOKEN="$(cat /workspace/hf_token)"
+          rm -f /workspace/hf_token
+          export HF_HUB_DISABLE_TELEMETRY=1
+          export TOKENIZERS_PARALLELISM=false
+          export PYTHONHASHSEED=2026
+          export CUBLAS_WORKSPACE_CONFIG=:4096:8
+          export WANDB_MODE=disabled
+
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+          RECONSTRUCTION_MINUTES=90 \
+          FIRST_EVAL_MINUTES=75 \
+          SECOND_EVAL_MINUTES=45 \
+            bash scripts/run_tofu_openunlearning_eval.sh
+          REMOTE
+
+      - name: Collect compact reconstruction and evaluation evidence
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          for file in tofu-openunlearning-evidence.tar.gz tofu-openunlearning-evidence.sha256; do
+            scp \
+              -i .runpod/id_ed25519 \
+              -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              -o ConnectionAttempts=2 \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record bounded cost estimate
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          mkdir -p gpu-artifacts
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from pathlib import Path
+          allocation = json.loads(Path('runpod-allocation.json').read_text())
+          elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
+          hourly = float(allocation['cost_per_hr'])
+          self_destruct = int(os.environ['POD_SELF_DESTRUCT_SECONDS'])
+          payload = {
+              'elapsed_seconds_until_cleanup': elapsed,
+              'reported_hourly_gpu_cost': hourly,
+              'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
+              'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
+              'pod_self_destruct_seconds': self_destruct,
+              'maximum_gpu_cost_at_both_caps': float(os.environ['MAX_HOURLY_COST']) * self_destruct / 3600.0,
+              'training_passes': 2,
+              'benchmark': 'OpenUnlearning TOFU forget10',
+              'attention_implementation': 'eager',
+          }
+          Path('gpu-artifacts/cost-estimate.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload OpenUnlearning evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-openunlearning-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 60
+          compression-level: 0
+
+      - name: Enforce evaluation success
+        if: always()
+        run: |
+          if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
+            echo "The remote TOFU reconstruction/OpenUnlearning evaluation did not complete successfully." >&2
+            exit 1
+          fi
+          test -f gpu-artifacts/tofu-openunlearning-evidence.tar.gz
+          test -f gpu-artifacts/tofu-openunlearning-evidence.sha256

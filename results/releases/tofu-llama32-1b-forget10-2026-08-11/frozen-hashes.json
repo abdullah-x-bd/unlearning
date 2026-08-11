@@ -1,0 +1,15 @@
+{
+  "deletion_model_sha256": "067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3",
+  "deletion_optimizer_sha256": "0152484534eab198ebee5a500e77d81451f2cba34ea6baa987ccc5726e20daa1",
+  "forget_count": 400,
+  "forget_ids_sha256": "dc1f259e1c930087b81fc2c82ac38345a6ff1097760137bbb366a4f62230dc3d",
+  "model_revision": "9213176726f574b556790deb65791e0c5aa438b6",
+  "original_model_sha256": "54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65",
+  "original_optimizer_sha256": "7dae55302988b834099f224a6ababcbd97a3411afa1b54e5e9a1739854f8e773",
+  "plan_sha256": "466595193cba55c4cf408b5d5c7d679d6d93bcd73dc11a8b356ac2c716c282da",
+  "source_artifact_id": 9104982056,
+  "source_artifact_zip_sha256": "6a1381c76bec90233d5e4d1dde3fc43362405ed6bbd6d4378f709cdbf3634d8d",
+  "source_commit": "c2375c1e491224062c05de6a3abe1b50f4af3937",
+  "source_evidence_tar_sha256": "ac2fc36426c2b1fc91286c370956d48f061603ea1922ecabeda5f86faf832470",
+  "source_workflow_run": 31490644488
+}

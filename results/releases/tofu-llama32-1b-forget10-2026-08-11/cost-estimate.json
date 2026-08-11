@@ -1,0 +1,9 @@
+{
+  "benchmark": "TOFU forget10",
+  "elapsed_seconds_until_cleanup": 7192.5770943164825,
+  "estimated_gpu_cost_until_cleanup": 1.0589071833299266,
+  "four_pass_design": true,
+  "hard_experiment_runtime_minutes": 240,
+  "hard_hourly_cap": 0.7,
+  "reported_hourly_gpu_cost": 0.53
+}

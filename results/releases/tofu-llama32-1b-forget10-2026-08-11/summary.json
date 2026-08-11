@@ -1,0 +1,105 @@
+{
+  "config_sha256": "5f584494ad4b11bb703b143015e6c0fcf9840273f304e8b60c5ba9a5a6efc46a",
+  "original": {
+    "base_checkpoint": {
+      "bytes": 4943319014,
+      "model_sha256": "bc6423ee3a3410dc2e8d44385719148d8f63ef2942abf2921abee5fb1bb21c6c",
+      "next_optimizer_step": 0,
+      "optimizer_sha256": "45a7fa9285e46b64168970cc521b7808e934c1fca731719f4f43b2a8d51ce6e6",
+      "path": "runs/tofu-llama32-1b-forget10/original/checkpoints/step-000000.pt"
+    },
+    "final_model_state_bytes": 4943319018,
+    "model_sha256": "54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65",
+    "optimizer_sha256": "7dae55302988b834099f224a6ababcbd97a3411afa1b54e5e9a1739854f8e773",
+    "resolved_model_commit": "9213176726f574b556790deb65791e0c5aa438b6",
+    "stats": {
+      "applied_updates": 625,
+      "logical_steps_seen": 625,
+      "retained_examples": 20000,
+      "retained_tokens": 696525,
+      "skipped_updates": 0,
+      "summed_training_loss": 1485018.740661621,
+      "wall_seconds": 1722.5022455006838
+    },
+    "wal": {
+      "manifest_bytes": 878890,
+      "manifest_sha256": "827a6d93abea44794315d15f80ba91fda5a8910c97323d817d8a332fa327062d",
+      "record_size": 32,
+      "records": 2500,
+      "total_bytes_per_microbatch": 383.556,
+      "total_provenance_bytes": 958890,
+      "wal_bytes": 80000,
+      "wal_sha256": "d5764f139c53b87ac751bd1c07cfb8ce80cbba0c2286dc3a68940dd0ae020c71"
+    }
+  },
+  "plan_sha256": "466595193cba55c4cf408b5d5c7d679d6d93bcd73dc11a8b356ac2c716c282da",
+  "replay_identity": {
+    "model_comparison": {
+      "exact": true,
+      "l2_diff": 0.0,
+      "left_sha256": "54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65",
+      "max_abs_diff": 0.0,
+      "right_sha256": "54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65",
+      "total_elements": 1498482688,
+      "total_tensors": 147,
+      "unequal_elements": 0,
+      "unequal_tensors": 0
+    },
+    "model_sha256": "54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65",
+    "optimizer_hash_equal": true,
+    "optimizer_sha256": "7dae55302988b834099f224a6ababcbd97a3411afa1b54e5e9a1739854f8e773",
+    "stats": {
+      "applied_updates": 625,
+      "logical_steps_seen": 625,
+      "retained_examples": 20000,
+      "retained_tokens": 696525,
+      "skipped_updates": 0,
+      "summed_training_loss": 1485018.740661621,
+      "wall_seconds": 1720.072434157133
+    }
+  },
+  "scenarios": [
+    {
+      "checkpoint_step": 0,
+      "earliest_affected_step": 0,
+      "forget_count": 400,
+      "name": "tofu-forget10",
+      "redaction": {
+        "forgotten_ids_present": false,
+        "forgotten_records": 400,
+        "labels_preserved": true,
+        "retained_records": 3600,
+        "source_directory": "data/prepared/tofu-llama32-1b-openunlearning",
+        "source_records": 4000
+      },
+      "repacked": null,
+      "replay": {
+        "slot_mask": {
+          "comparison_to_oracle": {
+            "exact": true,
+            "l2_diff": 0.0,
+            "left_sha256": "067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3",
+            "max_abs_diff": 0.0,
+            "right_sha256": "067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3",
+            "total_elements": 1498482688,
+            "total_tensors": 147,
+            "unequal_elements": 0,
+            "unequal_tensors": 0
+          },
+          "model_sha256": "067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3",
+          "optimizer_hash_equal_to_oracle": true,
+          "optimizer_sha256": "0152484534eab198ebee5a500e77d81451f2cba34ea6baa987ccc5726e20daa1",
+          "stats": {
+            "applied_updates": 625,
+            "logical_steps_seen": 625,
+            "retained_examples": 18000,
+            "retained_tokens": 623085,
+            "skipped_updates": 0,
+            "summed_training_loss": 1324959.5881958008,
+            "wall_seconds": 1715.1310187391937
+          }
+        }
+      }
+    }
+  ]
+}
