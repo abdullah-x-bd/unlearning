@@ -16,6 +16,11 @@ artifacts/*
 results/*
 !results/.gitkeep
 
+# Fetched pinned upstreams
+external/open-unlearning/
+external/muse_bench/
+external/pythia/
+
 # Large model/data files
 *.pt
 *.pth

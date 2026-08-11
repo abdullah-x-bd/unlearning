@@ -1,0 +1,17 @@
+benchmark: TOFU
+role: standardized_external_evaluation
+framework: OpenUnlearning
+framework_commit: 4ad738aaf60f6a4385f6e2506d01da99e76c31f3
+model: Llama-3.2-1B-Instruct
+target:
+  official_reference: open-unlearning/tofu_Llama-3.2-1B-Instruct_full
+  replayable_local_target: runs/tofu-llama32-1b-trace/original/final-model-state.pt
+splits:
+  forget01: {holdout: holdout01, retain: retain99}
+  forget05: {holdout: holdout05, retain: retain95}
+  forget10: {holdout: holdout10, retain: retain90}
+publication_baselines: [GradAscent, GradDiff, NPO, SimNPO]
+evaluation_source: pinned OpenUnlearning
+notes:
+  - Publication baseline rows come from the pinned upstream framework, not src/unlearning_at_scale/baselines.py.
+  - Exact replay and approximate methods must use the same chosen target checkpoint and retain reference within any direct comparison table.

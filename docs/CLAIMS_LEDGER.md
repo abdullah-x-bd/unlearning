@@ -16,7 +16,9 @@ No candidate claim moves into the rebuilt manuscript until its required evidence
 | G10 | XOR rollback restores earlier state bytes exactly | unit tests plus scaled checkpoint benchmark | regression test passes, scale benchmark pending |
 | G11 | cohort adapter deletion can recover the unchanged base exactly | base hash before adapter and after unload | implementation complete, GPU run pending |
 | G12 | curvature hot path provides useful approximate deletion behavior | forget/retain/audit comparison against baselines | implementation complete, runs pending |
-| G13 | replay compares favorably with GA, GradDiff, and NPO on the relevant tradeoffs | same-model baseline suite | implementation complete, runs pending |
-| G14 | the mechanism generalizes beyond the synthetic trace study | TOFU track and model-scale replication | implementation complete, runs pending |
-| G15 | distributed replay is exact | dedicated multi-GPU deterministic suite | not implemented, claim prohibited |
-| G16 | the mechanism directly satisfies a specific legal erasure obligation | separate legal analysis tied to actual technical guarantees | not a technical claim |
+| G13 | replay compares with established approximate methods on standardized unlearning metrics | same-target GradAscent, GradDiff, NPO and SimNPO runs from pinned OpenUnlearning plus exact command manifests | integration complete, runs pending |
+| G14 | the mechanism generalizes beyond the controlled WikiText systems study | Llama 3.2 1B TOFU trace runs plus pinned OpenUnlearning evaluation on forget01/05/10 | integration complete, runs pending |
+| G15 | results are reproducible from frozen external dependencies and data | verified artifact lock containing full Hub SHAs, external Git commits and prepared-dataset file hashes | lock machinery complete, final data lock pending |
+| G16 | MUSE confirms behavior under larger external validation including scaling/sequential deletion | pinned MUSE News/Books results | budget-dependent, no claim yet |
+| G17 | distributed replay is exact | dedicated multi-GPU deterministic suite | not implemented, claim prohibited |
+| G18 | the mechanism directly satisfies a specific legal erasure obligation | separate legal analysis tied to actual technical guarantees | not a technical claim |

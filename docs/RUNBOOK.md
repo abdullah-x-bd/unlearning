@@ -1,185 +1,147 @@
 # Experimental runbook
 
-This file defines the order in which the research artifact should be executed. The paper should not be rewritten before the release bundle reaches the end of this runbook.
+The paper is rewritten only after this sequence produces a frozen release bundle.
 
-## Phase A. Freeze the experiment definition
+## Phase A. Freeze code and external frameworks
 
-1. Freeze the Git commit used for experiments.
-2. Pin Python package versions in the execution environment.
-3. Replace floating model revisions with immutable Hugging Face commit SHAs.
-4. Set `release_mode: true` in release configs.
-5. Record the exact GPU type and CUDA stack.
-6. Decide the final model matrix before beginning expensive runs.
+1. Freeze the project Git commit.
+2. Fetch pinned upstreams with `python scripts/bootstrap_upstreams.py`.
+3. Verify OpenUnlearning, MUSE and Pythia reference checkouts match `external/upstreams.lock.yaml` exactly.
+4. Pin the Python environment and capture package versions.
+5. Record GPU, CUDA, cuDNN and PyTorch versions.
 
-## Phase B. Freeze datasets
+## Phase B. Prepare Study A data
 
-1. Prepare the WikiText trace dataset.
-2. Prepare validation data with the same tokenizer and sequence length.
-3. Prepare the TOFU track.
-4. Verify all dataset manifests and hashes.
-5. Keep raw preparation logs.
-6. Do not regenerate a dataset midway through the experiment under the same artifact name.
+Prepare the WikiText-103 trace corpus and validation data using the configured Pythia tokenizer. Preserve the preparation manifest and raw preparation logs. Do not regenerate an artifact under the same name later.
 
-## Phase C. Software verification
+## Phase C. Resolve benchmark sources and prepare Study B data
+
+Resolve the Llama 3.2 1B and TOFU Hub refs. Prepare TOFU with `scripts/prepare_tofu_openunlearning.py`, using the exact resolved model and dataset commits. The exporter must produce `labels.npy` with prompt/system labels masked and only the final assistant response active.
+
+Verify `forget01`, `forget05`, `forget10` and corresponding retain ID files were produced.
+
+## Phase D. Freeze all artifacts
 
 Run:
+
+```bash
+python scripts/freeze_artifacts.py
+python scripts/verify_release_lock.py
+```
+
+The generated lock must contain full 40-character Hub commits, exact external Git commits, per-file hashes for both prepared token stores and a directory digest for each dataset. From this point onward, changing any locked data requires a new release identity.
+
+## Phase E. Software verification
 
 ```bash
 pytest
 uas core-smoke --output runs/core-smoke
 ```
 
-The release commit should have a clean regression run before GPU experiments begin.
+A failure blocks paid runs. The tiny smoke model is never scientific evidence.
 
-## Phase D. Original training and provenance
+## Phase F. Study A original training and provenance
 
-For each primary model:
+Use `scripts/run_release.py` or `scripts/run_release_matrix.py`, never the unlocked runner, for publication evidence.
 
-1. load the pinned base model
+For each Pythia model:
+
+1. load the full SHA from the artifact lock
 2. save the step-zero checkpoint
 3. build the immutable execution plan
-4. train the original run
-5. record the WAL and ordered-ID manifest
+4. train the original trace
+5. record WAL and ordered-ID manifest
 6. save periodic checkpoints
-7. save final model-state hashes and optimizer-state hashes
+7. save final model and optimizer hashes
 8. record runtime and storage
 
-## Phase E. Identity replay
+## Phase G. Study A identity replay
 
-Replay the WAL with no deletion from the step-zero checkpoint.
+Replay with no deletion. Record model hash equality, optimizer hash equality, unequal elements, maximum absolute difference and replay time. If identity replay fails, deletion replay is not interpreted until the failure is understood.
 
-Record:
-
-- model hash equality
-- optimizer hash equality
-- unequal elements
-- maximum absolute difference
-- replay time
-
-If identity replay fails, deletion replay is not interpreted until the failure is understood.
-
-## Phase F. Deletion oracle and replay
+## Phase H. Study A deletion oracle and replay
 
 For each deletion scenario:
 
 1. select the forget set
-2. expand exact or near-duplicate closure when configured
+2. expand duplicate closure when configured
 3. locate the first affected logical step
 4. select the latest eligible checkpoint
-5. execute an independent slot-preserving deletion oracle
-6. physically materialize a redacted token store for main exactness runs
-7. replay the WAL against the redacted store
-8. run both `slot_mask` and `filter`
+5. execute the independent trace-preserving deletion oracle
+6. materialize a token store with forgotten rows physically absent
+7. run `slot_mask`
+8. run `filter`
 9. compare model and optimizer state with the oracle
 10. run the repacked counterfactual
 
-## Phase G. Deletion geometry
+## Phase I. Study A deletion geometry
 
-Use the 410M study for:
+Use Pythia 410M for early 0.1%, middle 1%, late 1%, random 5%, canary deletion and duplicate closure. Keep geometry separate from the expensive scale axis.
 
-- early 0.1 percent
-- middle 1 percent
-- late 1 percent
-- random 5 percent
-- canary group deletion
-- duplicate closure
+## Phase J. Study A scaling
 
-Keep scale and geometry as separate axes to control cost.
+Run the canonical deletion scenario on 160M, 410M, 1B and 1.4B. Run 2.8B only if budget permits. All model refs are resolved from the same artifact lock.
 
-## Phase H. Model scaling
+## Phase K. Determinism envelope
 
-Run the canonical deletion scenario over:
+Change one factor at a time: FP32/BF16, eager/SDPA, dropout, strict determinism, optimizer foreach/fused, CPU where feasible and a second GPU architecture if available. Failures remain in the result table.
 
-- 160M
-- 410M
-- 1B
-- 1.4B
-- 2.8B if budget permits
+## Phase L. Provenance sufficiency
 
-Use identical dataset preparation and comparable training semantics wherever architecture allows.
+Ablate RNG seed, learning rate, sample order, microbatch assignment, accumulation boundary and logical optimizer-step metadata. A field is described as necessary only if evidence supports the statement under the tested regime.
 
-## Phase I. Determinism envelope
+## Phase M. Checkpoint economics
 
-Change one factor at a time:
+Measure retained checkpoint bytes, nearest eligible checkpoint, replay distance, wall time and exactness across checkpoint policies. Build the storage-versus-recovery Pareto curve from measured data.
 
-- FP32 versus BF16
-- eager versus SDPA
-- dropout enabled versus disabled
-- strict deterministic algorithms versus relaxed
-- optimizer foreach
-- optimizer fused
-- CPU baseline where feasible
-- different GPU architecture if available
+## Phase N. Study B replayable TOFU target
 
-Failures stay in the result table.
+Run `configs/benchmarks/tofu-llama32-1b-trace.yaml` through `scripts/run_release.py`. This produces a replayable Llama 3.2 1B target with the benchmark-faithful TOFU labels plus exact deletion outputs for forget01, forget05 and forget10.
 
-## Phase J. Provenance sufficiency
+The local target is intentionally distinguished from OpenUnlearning's published target checkpoint. The published target is a calibration reference. Direct method comparisons must start from one common target.
 
-Run all provenance ablations from the same base checkpoint:
+## Phase O. Export Study B states to Hugging Face format
 
-- RNG seed
-- learning rate
-- sample order
-- microbatch assignment
-- accumulation boundary
-- logical optimizer step
+For every target/oracle/replay state to be evaluated externally, run:
 
-The paper should describe a provenance field as necessary only when the experiment supports that statement under the tested regime.
+```bash
+python scripts/export_hf_checkpoint.py \
+  configs/benchmarks/tofu-llama32-1b-trace.yaml \
+  --state <STATE_DICT> \
+  --output <HF_CHECKPOINT_DIR>
+```
 
-## Phase K. Checkpoint tradeoff
+This reconstructs the model on the locked base revision and exports a normal Hugging Face checkpoint directory.
 
-Train with a sufficiently fine checkpoint interval, then simulate coarser retention policies. Record:
+## Phase P. Official TOFU evaluation
 
-- retained checkpoint bytes
-- nearest eligible checkpoint
-- replay distance
-- replay wall time
-- exactness
+Evaluate exported exact replay, oracle and relevant comparison states with the pinned OpenUnlearning evaluator:
 
-This yields a storage-versus-recovery Pareto curve.
+```bash
+python scripts/openunlearning_adapter.py tofu-eval \
+  --checkpoint <HF_CHECKPOINT_DIR> \
+  --forget-split forget10
+```
 
-## Phase L. Approximate baselines
+Repeat for forget01, forget05 and forget10. The adapter records the upstream commit and evaluation provenance.
 
-Run GA, GradDiff, and NPO against the same original model and same deletion request. Use the same audit set.
+## Phase Q. Official approximate baselines
 
-Do not tune exact replay against approximate methods. Exact replay has no forget-quality hyperparameter because state equality to its oracle is the primary criterion.
+Run GradAscent, GradDiff, NPO and SimNPO through the pinned OpenUnlearning framework. For any direct comparison to our replay method, pass the same local target checkpoint and the same retain reference used in evaluation.
 
-## Phase M. Operational extensions
+Our `src/unlearning_at_scale/baselines.py` implementations are sanity/debug implementations only and do not supply publication baseline rows.
 
-### XOR rollback
+## Phase R. Operational extensions
 
-Measure patch size, creation time, application time, and exact recovery over consecutive checkpoints.
+Measure XOR rollback patch size/latency/exact recovery, cohort LoRA base recovery and the approximate curvature hot path. Keep these secondary to the exact replay result.
 
-### Cohort LoRA
+## Phase S. Study C MUSE, budget permitting
 
-Train a cohort adapter over a frozen base, unload it, and compare the recovered base hash with the pre-adapter base hash.
+Only after Studies A and B are complete, run the pinned OpenUnlearning MUSE integration on News and Books. Include the base six-way evaluation, deletion-size scaling and sequential-deletion sustainability where budget permits. Record both the OpenUnlearning commit and original MUSE commit.
 
-### Curvature hot path
+## Phase T. Audits and aggregation
 
-Measure forget and retain behavior before and after the approximate update.
-
-## Phase N. Standard benchmark track
-
-Run the TOFU forget01, forget05, and forget10 studies. Keep benchmark-facing results separate from the WikiText systems matrix.
-
-Use OpenUnlearning or equivalent standard evaluation tooling for standardized external comparisons when the chosen model architecture is supported.
-
-## Phase O. Audits
-
-For exact oracle, replay, repacked retraining, and approximate methods, record relevant secondary audits:
-
-- forget loss
-- retain loss
-- held-out perplexity
-- canary completion likelihood
-- greedy canary extraction
-- loss-based membership AUC
-
-State equality remains the primary criterion for the exact path.
-
-## Phase P. Aggregate
-
-Run:
+Run state equality checks plus relevant behavioral audits. Aggregate all rows with:
 
 ```bash
 python scripts/aggregate_results.py runs \
@@ -187,41 +149,26 @@ python scripts/aggregate_results.py runs \
   --json results/experiment_rows.json
 ```
 
-Create final machine-readable tables before drafting manuscript prose.
+Do not manually copy values into paper tables.
 
-## Phase Q. Release bundle
+## Phase U. Release bundle
 
-A release should contain or permanently archive:
+Archive resolved configs, `locks/artifacts.lock.json`, environment snapshots, dataset manifests, execution plans, WALs, ordered-ID manifests, checkpoint hashes, final state hashes, forget-ID lists, OpenUnlearning command manifests, audit JSON and aggregated tables. Large model weights may live outside GitHub but their immutable location and hash must be recorded.
 
-- resolved configs
-- environment snapshots
-- dataset manifests
-- execution plans
-- WALs
-- ordered-ID manifests or a privacy-safe research equivalent
-- checkpoint hashes
-- final state hashes
-- forget-ID lists
-- audit JSON
-- aggregated tables
-- code commit SHA
+## Phase V. Claims ledger
 
-Large model weights and raw token arrays can be stored separately when repository limits make Git unsuitable, but the archive location must be permanent and cited by the release.
+Populate every evidence cell in `docs/CLAIMS_LEDGER.md`. Delete unsupported claims.
 
-## Phase R. Claims ledger
+## Phase W. Paper rewrite
 
-Populate every evidence cell in `docs/CLAIMS_LEDGER.md`. Delete claims that are not supported.
-
-## Phase S. Paper rewrite
-
-Only after the release artifact is frozen:
+Only after the artifact is frozen:
 
 1. rewrite the abstract from actual results
-2. rewrite the introduction and contributions
-3. write the full literature review
+2. rewrite introduction and contributions
+3. write the literature review
 4. formalize the trace-preserving counterfactual
-5. describe the system from the released code
-6. write experimental methodology from frozen configs
-7. build tables and figures from aggregated result files
+5. describe the released system
+6. write methodology from frozen configs
+7. generate tables/figures from machine-readable results
 8. write failure modes and limitations from observed evidence
 9. keep the paper title unchanged

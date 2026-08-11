@@ -1,0 +1,14 @@
+benchmark: MUSE
+role: budget_dependent_external_validation
+enabled_by_default: false
+framework: OpenUnlearning
+framework_commit: 4ad738aaf60f6a4385f6e2506d01da99e76c31f3
+original_benchmark_commit: 6d4fdcbdebe4ad46dccaf70f8526cd23ecff609e
+model: Llama-2-7b-hf
+corpora: [News, Books]
+publication_baselines: [GradAscent, GradDiff, NPO, SimNPO]
+studies:
+  - base_six_way_evaluation
+  - deletion_scalability
+  - sequential_deletion_sustainability
+budget_policy: run only after the Pythia systems study and TOFU 1B study are complete
