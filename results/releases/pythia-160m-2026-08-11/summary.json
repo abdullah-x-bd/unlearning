@@ -1,0 +1,98 @@
+{
+  "config_sha256": "eb9249b12a9e53fe84baac669fafd158cbe093862d8bf1063d4d62b8c986806d",
+  "cost": {
+    "elapsed_seconds_until_cleanup": 5314.804603099823,
+    "estimated_gpu_cost_until_cleanup": 0.7824573443452517,
+    "hard_experiment_runtime_minutes": 300,
+    "hard_hourly_cap": 0.75,
+    "note": "Estimate excludes any separately billed storage or platform adjustments.",
+    "reported_hourly_gpu_cost": 0.53
+  },
+  "date_utc": "2026-08-11",
+  "experiment": "pythia-160m-release",
+  "github_actions_run_id": 31451730675,
+  "gpu": {
+    "compute_capability": [8, 6],
+    "cuda_runtime": "12.4",
+    "cudnn": 90100,
+    "device_name": "NVIDIA RTX A6000",
+    "same_process_matmul_exact": true,
+    "torch": "2.4.1+cu124",
+    "total_memory_bytes": 51033931776
+  },
+  "identity": {
+    "exact": true,
+    "l2_diff": 0.0,
+    "max_abs_diff": 0.0,
+    "optimizer_exact": true,
+    "total_elements": 162322944,
+    "unequal_elements": 0,
+    "unequal_tensors": 0,
+    "wall_seconds": 319.52023589238524
+  },
+  "model_commit": "b56d9bee36300031aeea723b73c4d62ac7fa71a2",
+  "original": {
+    "applied_updates": 1266,
+    "model_sha256": "59e8cf6bafdce6444c1846eb2be755fba775edffcc069c6464b01de89b1c745e",
+    "model_state_bytes": 649351034,
+    "optimizer_sha256": "c7e8b14a7b275175a1e4031e66a131c3aab3d4c45691aa611fb54b04c05b6b6e",
+    "retained_examples": 20256,
+    "retained_tokens": 1896924,
+    "wal": {
+      "manifest_bytes": 1134250,
+      "manifest_sha256": "22e945bbffc09a0e118edebb09ffde2c74a284064cd06ce7924672145597c899",
+      "record_size": 32,
+      "records": 5064,
+      "total_bytes_per_microbatch": 255.98301737756714,
+      "total_provenance_bytes": 1296298,
+      "wal_bytes": 162048,
+      "wal_sha256": "a94d3c44d26b69ffb25ca8c8a9a5d93f2326ef58022a346d45133140753a5549"
+    },
+    "wall_seconds": 369.9474404491484
+  },
+  "plan_sha256": "c617d628e7a04357f93e5994b8b68f67cd1cc14d3cdc8f7b815e99a258744a5e",
+  "repository_commit": "de452d793ad773ea4353760e6a895ecebc442ee8",
+  "scenarios": [
+    {
+      "checkpoint_step": 0,
+      "earliest_affected_step": 50,
+      "filter": {"exact": false, "l2_diff": 3.194303985989306, "max_abs_diff": 0.004561163485050201, "optimizer_exact": false, "unequal_elements": 147269281, "wall_seconds": 354.18697891384363},
+      "forget_count": 20,
+      "name": "early-0.1pct",
+      "physical_redaction": {"forgotten_ids_present": false, "forgotten_records": 20, "labels_preserved": false, "retained_records": 20236, "source_directory": "data/prepared/wikitext103-pythia-256", "source_records": 20256},
+      "repacked": {"exact": false, "l2_diff": 3.2365966670297355, "max_abs_diff": 0.004558585584163666, "optimizer_exact": false, "unequal_elements": 148882347, "wall_seconds": 353.6868606619537},
+      "slot_mask": {"exact": true, "l2_diff": 0.0, "max_abs_diff": 0.0, "optimizer_exact": true, "unequal_elements": 0, "wall_seconds": 359.00286623463035}
+    },
+    {
+      "checkpoint_step": 250,
+      "earliest_affected_step": 422,
+      "filter": {"exact": false, "l2_diff": 1.724422796537518, "max_abs_diff": 0.0021168142557144165, "optimizer_exact": false, "unequal_elements": 146261558, "wall_seconds": 255.30960349738598},
+      "forget_count": 203,
+      "name": "middle-1pct",
+      "physical_redaction": {"forgotten_ids_present": false, "forgotten_records": 203, "labels_preserved": false, "retained_records": 20053, "source_directory": "data/prepared/wikitext103-pythia-256", "source_records": 20256},
+      "repacked": {"exact": false, "l2_diff": 2.6036110251765474, "max_abs_diff": 0.002765655517578125, "optimizer_exact": false, "unequal_elements": 162318797, "wall_seconds": 253.50797739997506},
+      "slot_mask": {"exact": true, "l2_diff": 0.0, "max_abs_diff": 0.0, "optimizer_exact": true, "unequal_elements": 0, "wall_seconds": 256.4362845569849}
+    },
+    {
+      "checkpoint_step": 750,
+      "earliest_affected_step": 849,
+      "filter": {"exact": false, "l2_diff": 0.32636386187404987, "max_abs_diff": 0.0003002118319272995, "optimizer_exact": false, "unequal_elements": 143062372, "wall_seconds": 132.92490680888295},
+      "forget_count": 203,
+      "name": "late-1pct",
+      "physical_redaction": {"forgotten_ids_present": false, "forgotten_records": 203, "labels_preserved": false, "retained_records": 20053, "source_directory": "data/prepared/wikitext103-pythia-256", "source_records": 20256},
+      "repacked": {"exact": false, "l2_diff": 1.946142325497563, "max_abs_diff": 0.0022727549076080322, "optimizer_exact": false, "unequal_elements": 162320639, "wall_seconds": 130.61921390891075},
+      "slot_mask": {"exact": true, "l2_diff": 0.0, "max_abs_diff": 0.0, "optimizer_exact": true, "unequal_elements": 0, "wall_seconds": 131.324725843966}
+    },
+    {
+      "checkpoint_step": 0,
+      "earliest_affected_step": 0,
+      "filter": {"exact": false, "l2_diff": 3.235816948862458, "max_abs_diff": 0.005043551325798035, "optimizer_exact": false, "unequal_elements": 147141564, "wall_seconds": 306.80854224413633},
+      "forget_count": 1013,
+      "name": "random-5pct",
+      "physical_redaction": {"forgotten_ids_present": false, "forgotten_records": 1013, "labels_preserved": false, "retained_records": 19243, "source_directory": "data/prepared/wikitext103-pythia-256", "source_records": 20256},
+      "repacked": {"exact": false, "l2_diff": 3.1934575519418806, "max_abs_diff": 0.004252586513757706, "optimizer_exact": false, "unequal_elements": 162317872, "wall_seconds": 293.54134225845337},
+      "slot_mask": {"exact": true, "l2_diff": 0.0, "max_abs_diff": 0.0, "optimizer_exact": true, "unequal_elements": 0, "wall_seconds": 310.74094144254923}
+    }
+  ],
+  "schema_version": 1
+}
