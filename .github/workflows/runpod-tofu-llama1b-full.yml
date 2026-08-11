@@ -1,0 +1,286 @@
+name: RunPod TOFU Llama 1B full experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-tofu-llama1b-full-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runpod-tofu-llama1b-full
+  cancel-in-progress: false
+
+jobs:
+  experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      HF_TOKEN_PRIMARY: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
+      MAX_HOURLY_COST: "0.70"
+      MAX_RUNTIME_MINUTES: "240"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify credentials and frozen model access before allocating compute
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          python -m pip install --disable-pip-version-check --quiet huggingface_hub==0.36.0 pyyaml==6.0.2
+          python scripts/runpod_control.py auth-check
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from huggingface_hub import hf_hub_download
+
+          token = (os.environ.get('HF_TOKEN_PRIMARY') or os.environ.get('HF_TOKEN_ALT') or '').strip()
+          if not token:
+              raise RuntimeError('HF_TOKEN is missing; refusing to allocate paid GPU compute')
+          lock = json.loads(Path('locks/artifacts.lock.json').read_text())
+          item = lock['huggingface']['llama32_1b_instruct']
+          resolved = item['resolved_sha']
+          if len(resolved) != 40:
+              raise RuntimeError('Llama artifact is not pinned to a full commit SHA')
+          hf_hub_download(
+              repo_id=item['repo_id'],
+              filename='config.json',
+              revision=resolved,
+              token=token,
+          )
+          print(f"Frozen Llama access verified at {resolved}")
+          PY
+
+      - name: Verify focused four-pass release configuration
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          cfg = yaml.safe_load(Path('configs/benchmarks/tofu-llama32-1b-forget10.yaml').read_text())
+          assert cfg['release_mode'] is True
+          assert cfg['materialize_redacted_store'] is True
+          assert cfg['model']['artifact_key'] == 'llama32_1b_instruct'
+          assert cfg['model']['dtype'] == 'bf16'
+          assert cfg['plan']['microbatch_size'] == 8
+          assert cfg['plan']['grad_accum_steps'] == 4
+          assert cfg['plan']['epochs'] == 5
+          assert cfg['checkpoint_every'] == 0
+          assert cfg['replay_policies'] == ['slot_mask']
+          assert cfg['run_repacked_baseline'] is False
+          assert len(cfg['forget_scenarios']) == 1
+          scenario = cfg['forget_scenarios'][0]
+          assert scenario['name'] == 'tofu-forget10'
+          assert scenario['strategy'] == 'id_file'
+          assert scenario['path'].endswith('forget10_ids.txt')
+          print('Focused four-pass TOFU forget10 release configuration verified')
+          PY
+
+      - name: Generate ephemeral SSH key and token file
+        run: |
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+          TOKEN="${HF_TOKEN_PRIMARY:-$HF_TOKEN_ALT}"
+          test -n "$TOKEN"
+          umask 077
+          printf '%s' "$TOKEN" > .runpod/hf_token
+
+      - name: Allocate one guarded RTX A6000 Pod
+        id: pod
+        run: |
+          python scripts/runpod_control.py create \
+            --name "uas-tofu1b-full-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --public-key-file .runpod/id_ed25519.pub \
+            --gpu-types "NVIDIA RTX A6000" \
+            --max-hourly-cost "$MAX_HOURLY_COST" \
+            --wait-seconds 900 \
+            --output runpod-allocation.json
+          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSH daemon
+        run: |
+          for attempt in $(seq 1 90); do
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              "root@${{ steps.pod.outputs.host }}" 'echo ssh-ready'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become ready" >&2
+          exit 1
+
+      - name: Run frozen TOFU Llama 1B four-pass experiment
+        id: remote
+        continue-on-error: true
+        run: |
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 \
+            -o ConnectionAttempts=2 \
+            runpod-allocation.json .runpod/hf_token \
+            "root@${{ steps.pod.outputs.host }}:/workspace/"
+
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' MAX_RUNTIME_MINUTES='${MAX_RUNTIME_MINUTES}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          nohup bash -lc 'sleep 16200; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+          export HF_TOKEN="$(cat /workspace/hf_token)"
+          rm -f /workspace/hf_token
+          export HF_HUB_DISABLE_TELEMETRY=1
+          export TOKENIZERS_PARALLELISM=false
+          export PYTHONHASHSEED=2026
+          export CUBLAS_WORKSPACE_CONFIG=:4096:8
+
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+          exec > >(tee -a results/tofu-llama1b-full.log) 2>&1
+
+          package_evidence() {
+            set +e
+            df -h > results/disk-after.txt 2>&1
+            python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import tarfile
+
+          run_root = Path('runs/tofu-llama32-1b-forget10')
+          results = Path('results')
+          bundle = results / 'tofu-llama1b-full-evidence.tar.gz'
+          include_result_names = {
+              'runpod-allocation.json',
+              'tofu-llama1b-gpu-probe.json',
+              'disk-before.txt',
+              'disk-after.txt',
+              'tofu-llama1b-full.log',
+          }
+          with tarfile.open(bundle, 'w:gz') as archive:
+              if run_root.exists():
+                  for path in sorted(run_root.rglob('*')):
+                      if not path.is_file():
+                          continue
+                      if 'redacted-data' in path.parts:
+                          continue
+                      if path.suffix in {'.pt', '.npy'}:
+                          continue
+                      archive.add(path, arcname=str(path))
+              for name in sorted(include_result_names):
+                  path = results / name
+                  if path.exists():
+                      archive.add(path, arcname=str(path))
+          digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+          (results / 'tofu-llama1b-full-evidence.sha256').write_text(
+              f'{digest}  {bundle.name}\n'
+          )
+          print(f'Evidence bundle SHA256: {digest}', flush=True)
+          PY
+          }
+          trap package_evidence EXIT
+
+          df -h > results/disk-before.txt
+          python scripts/gpu_probe.py --output results/tofu-llama1b-gpu-probe.json
+          python scripts/bootstrap_upstreams.py
+          python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
+          python scripts/validate_release_data.py
+          python scripts/verify_release_lock.py
+          timeout --signal=TERM --kill-after=180s "${MAX_RUNTIME_MINUTES}m" \
+            python scripts/run_release.py configs/benchmarks/tofu-llama32-1b-forget10.yaml
+          REMOTE
+
+      - name: Collect compact experiment evidence
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          for file in tofu-llama1b-full-evidence.tar.gz tofu-llama1b-full-evidence.sha256; do
+            scp \
+              -i .runpod/id_ed25519 \
+              -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              -o ConnectionAttempts=2 \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record bounded cost estimate
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          mkdir -p gpu-artifacts
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from pathlib import Path
+          allocation = json.loads(Path('runpod-allocation.json').read_text())
+          elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
+          hourly = float(allocation['cost_per_hr'])
+          payload = {
+              'elapsed_seconds_until_cleanup': elapsed,
+              'reported_hourly_gpu_cost': hourly,
+              'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
+              'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
+              'hard_experiment_runtime_minutes': int(os.environ['MAX_RUNTIME_MINUTES']),
+              'four_pass_design': True,
+              'benchmark': 'TOFU forget10',
+          }
+          Path('gpu-artifacts/cost-estimate.json').write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + '\n'
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload full experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-llama1b-full-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 60
+          compression-level: 0
+
+      - name: Enforce experiment success
+        if: always()
+        run: |
+          if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
+            echo "The remote TOFU Llama 1B experiment did not complete successfully." >&2
+            exit 1
+          fi
+          test -f gpu-artifacts/tofu-llama1b-full-evidence.tar.gz
+          test -f gpu-artifacts/tofu-llama1b-full-evidence.sha256
