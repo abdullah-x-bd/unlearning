@@ -1,1 +1,1 @@
-Attempt 2 trigger for the guarded Pythia 2.8B four-pass full scaling experiment after bootstrapping PyYAML in the GitHub-side config guard.
+Attempt 3 trigger for the guarded Pythia 2.8B four-pass full scaling experiment after adding storage-aware phase release and a mandatory real-GPU lifecycle smoke gate.
