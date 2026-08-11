@@ -1,0 +1,14 @@
+{
+  "pods": [
+    {
+      "adjustedCostPerHr": null,
+      "cloudType": null,
+      "costPerHr": 0.53,
+      "createdAt": "2026-08-11 01:48:29.364 +0000 UTC",
+      "desiredStatus": "RUNNING",
+      "gpu": null,
+      "id": "lxcotjqunnw5y8",
+      "name": "uas-pythia160-31450419323-1"
+    }
+  ]
+}
