@@ -3,7 +3,6 @@ strict_determinism: true
 materialize_redacted_store: true
 release_mode: true
 output_dir: runs/pythia-2.8b
-progress_every: 25
 model:
   name: EleutherAI/pythia-2.8b
   artifact_key: pythia_2_8b
