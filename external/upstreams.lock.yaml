@@ -1,0 +1,14 @@
+schema_version: 1
+upstreams:
+  open_unlearning:
+    repository: https://github.com/locuslab/open-unlearning.git
+    commit: 4ad738aaf60f6a4385f6e2506d01da99e76c31f3
+    checkout: external/open-unlearning
+  muse_reference:
+    repository: https://github.com/jaechan-repo/muse_bench.git
+    commit: 6d4fdcbdebe4ad46dccaf70f8526cd23ecff609e
+    checkout: external/muse_bench
+  pythia_reference:
+    repository: https://github.com/EleutherAI/pythia.git
+    commit: a19eecb807ec2c79a39ebf18108816e6ffffc1d5
+    checkout: external/pythia
