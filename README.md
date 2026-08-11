@@ -24,7 +24,9 @@ Primary models:
 - `EleutherAI/pythia-410m`
 - `EleutherAI/pythia-1b`
 - `EleutherAI/pythia-1.4b`
-- `EleutherAI/pythia-2.8b` as a budget-dependent extension
+- `EleutherAI/pythia-2.8b`
+
+The completed paid releases currently cover Pythia 160M and Pythia 2.8B. Intermediate Pythia sizes remain optional rather than prerequisites for the manuscript.
 
 Human-readable configs use Pythia `step143000`; release execution resolves it to a full 40-character Hugging Face commit SHA through the artifact lock.
 
@@ -119,6 +121,11 @@ The ordered IDs are stored separately. Every run reports WAL bytes, manifest byt
 ## Exactness evidence
 
 Every exact comparison records model SHA-256, optimizer SHA-256, exact-hash equality, unequal tensors/elements, maximum absolute difference, L2 difference, applied/skipped updates, runtime, checkpoint size and replay distance. Byte-exact claims require both state hashes and tensor comparison to agree.
+
+Frozen release records:
+
+- [`Pythia 160M, 2026-08-11`](results/releases/pythia-160m-2026-08-11/README.md): exact identity replay and exact slot-preserving deletion replay across four deletion geometries, with filter and repacked counterfactuals diverging.
+- [`Pythia 2.8B, 2026-08-11`](results/releases/pythia-2.8b-2026-08-11/README.md): exact identity replay across 2,775,208,960 model elements and exact random-5% trace-preserving deletion replay from a physically redacted store, including optimizer-state identity.
 
 ## Prepare Study A data
 
@@ -216,9 +223,13 @@ The full sequence is in [`docs/RUNBOOK.md`](docs/RUNBOOK.md), candidate claims i
 
 **Artifact-freeze/preflight layer:** implemented
 
-**Multi-model paid GPU results:** not yet run
+**Paid systems releases:** Pythia 160M and Pythia 2.8B completed and frozen
 
-**Paper rewrite:** intentionally deferred until results are frozen
+**Pythia 2.8B scale result:** exact single-GPU identity replay and exact random-5% trace-preserving deletion replay from a physically redacted store
+
+**Standardized TOFU/OpenUnlearning benchmark:** not yet run
+
+**Paper rewrite:** intentionally deferred until the remaining evidence decision is made
 
 ## License
 
