@@ -24,7 +24,6 @@ jobs:
       HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
       MAX_HOURLY_COST: "0.70"
       POD_SELF_DESTRUCT_SECONDS: "14400"
-      FROZEN_RELEASE_DIR: results/releases/tofu-llama32-1b-forget10-2026-08-11
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +31,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Verify credentials, frozen hashes, and Hub access before allocating compute
+      - name: Zero-cost credential, artifact, and evaluator preflight
         run: |
           set -Eeuo pipefail
           test -n "$RUNPOD_API_KEY"
@@ -40,67 +39,7 @@ jobs:
             huggingface_hub==0.36.0 \
             pyyaml==6.0.2
           python scripts/runpod_control.py auth-check
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          from huggingface_hub import hf_hub_download
-
-          release = Path(os.environ['FROZEN_RELEASE_DIR'])
-          frozen = json.loads((release / 'frozen-hashes.json').read_text())
-          expected = {
-              'source_workflow_run': 31490644488,
-              'model_revision': '9213176726f574b556790deb65791e0c5aa438b6',
-              'plan_sha256': '466595193cba55c4cf408b5d5c7d679d6d93bcd73dc11a8b356ac2c716c282da',
-              'forget_ids_sha256': 'dc1f259e1c930087b81fc2c82ac38345a6ff1097760137bbb366a4f62230dc3d',
-              'original_model_sha256': '54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65',
-              'original_optimizer_sha256': '7dae55302988b834099f224a6ababcbd97a3411afa1b54e5e9a1739854f8e773',
-              'deletion_model_sha256': '067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3',
-              'deletion_optimizer_sha256': '0152484534eab198ebee5a500e77d81451f2cba34ea6baa987ccc5726e20daa1',
-          }
-          for key, value in expected.items():
-              if frozen.get(key) != value:
-                  raise RuntimeError(f'frozen release mismatch for {key}: {frozen.get(key)} != {value}')
-
-          token = (os.environ.get('HF_TOKEN_PRIMARY') or os.environ.get('HF_TOKEN_ALT') or '').strip()
-          if not token:
-              raise RuntimeError('HF_TOKEN is missing; refusing to allocate paid GPU compute')
-          lock = json.loads(Path('locks/artifacts.lock.json').read_text())
-          llama = lock['huggingface']['llama32_1b_instruct']
-          retain90 = lock['huggingface']['tofu_llama32_1b_retain90_reference']
-          if llama['resolved_sha'] != frozen['model_revision']:
-              raise RuntimeError('artifact lock and frozen TOFU release disagree on Llama revision')
-          hf_hub_download(
-              repo_id=llama['repo_id'],
-              filename='config.json',
-              revision=llama['resolved_sha'],
-              token=token,
-          )
-          hf_hub_download(
-              repo_id=retain90['repo_id'],
-              filename='config.json',
-              revision=retain90['resolved_sha'],
-              token=token,
-          )
-          print('Frozen TOFU hashes and pinned retain90 access verified before allocation')
-          PY
-
-      - name: Zero-cost OpenUnlearning and runner preflight
-        run: |
-          set -Eeuo pipefail
-          python scripts/bootstrap_upstreams.py
-          test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
-          bash -n scripts/run_tofu_openunlearning_eval.sh
-          python -m py_compile \
-            scripts/reconstruct_tofu_for_openunlearning.py \
-            scripts/openunlearning_adapter.py
-          python scripts/openunlearning_adapter.py tofu-eval \
-            --checkpoint /tmp/uas-placeholder-original \
-            --forget-split forget10 \
-            --task-name uas_preflight_original \
-            --attention-implementation eager \
-            --output-root /tmp/uas-openunlearning-preflight \
-            --dry-run
+          python scripts/preflight_tofu_openunlearning.py
 
       - name: Generate ephemeral SSH key and token file
         run: |
@@ -164,7 +103,7 @@ jobs:
             "root@${{ steps.pod.outputs.host }}" \
             "REPO_SHA='${GITHUB_SHA}' SELF_DESTRUCT='${POD_SELF_DESTRUCT_SECONDS}' bash -s" <<'REMOTE'
           set -Eeuo pipefail
-          nohup bash -lc 'sleep '"$SELF_DESTRUCT"'; runpodctl pod delete "$RUNPOD_POD_ID"' \
+          nohup bash -lc "sleep ${SELF_DESTRUCT}; runpodctl pod delete \$RUNPOD_POD_ID" \
             >/tmp/uas-self-destruct.log 2>&1 &
 
           cd /workspace
@@ -225,16 +164,14 @@ jobs:
           allocation = json.loads(Path('runpod-allocation.json').read_text())
           elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
           hourly = float(allocation['cost_per_hr'])
+          self_destruct = int(os.environ['POD_SELF_DESTRUCT_SECONDS'])
           payload = {
               'elapsed_seconds_until_cleanup': elapsed,
               'reported_hourly_gpu_cost': hourly,
               'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
               'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
-              'pod_self_destruct_seconds': int(os.environ['POD_SELF_DESTRUCT_SECONDS']),
-              'maximum_gpu_cost_at_both_caps': (
-                  float(os.environ['MAX_HOURLY_COST'])
-                  * int(os.environ['POD_SELF_DESTRUCT_SECONDS']) / 3600.0
-              ),
+              'pod_self_destruct_seconds': self_destruct,
+              'maximum_gpu_cost_at_both_caps': float(os.environ['MAX_HOURLY_COST']) * self_destruct / 3600.0,
               'training_passes': 2,
               'benchmark': 'OpenUnlearning TOFU forget10',
               'attention_implementation': 'eager',
