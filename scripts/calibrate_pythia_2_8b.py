@@ -130,7 +130,7 @@ def main() -> None:
             "seconds_per_update": seconds_per_update,
             "full_dataset_updates": full_updates,
             "estimated_seconds_per_full_pass_from_calibration": seconds_per_update * full_updates,
-            "estimated_seconds_for_five_full_pass_equivalents": seconds_per_update * full_updates * 5,
+            "estimated_seconds_for_six_full_pass_equivalents": seconds_per_update * full_updates * 6,
             "model_parameter_count": sum(parameter.numel() for parameter in model.parameters()),
             "model_parameter_bytes": sum(parameter.numel() * parameter.element_size() for parameter in model.parameters()),
             "parameter_dtype_counts": dtype_counts,
