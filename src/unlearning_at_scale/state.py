@@ -8,13 +8,20 @@ from typing import Any
 import torch
 
 
+def _tensor_bytes(tensor: torch.Tensor) -> bytes:
+    contiguous = tensor.detach().cpu().contiguous()
+    # Flatten first so zero-dimensional optimizer scalars such as AdamW's
+    # step tensor can be reinterpreted as bytes on every supported dtype.
+    return contiguous.reshape(-1).view(torch.uint8).numpy().tobytes(order="C")
+
+
 def _update_hash(hasher: "hashlib._Hash", value: Any) -> None:
     if torch.is_tensor(value):
         tensor = value.detach().cpu().contiguous()
         hasher.update(b"tensor")
         hasher.update(str(tensor.dtype).encode())
         hasher.update(json.dumps(list(tensor.shape)).encode())
-        hasher.update(tensor.view(torch.uint8).numpy().tobytes(order="C"))
+        hasher.update(_tensor_bytes(tensor))
         return
     if isinstance(value, dict):
         hasher.update(b"dict")
