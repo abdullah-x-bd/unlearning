@@ -2,109 +2,120 @@
 
 [![CI](https://github.com/abdullah-x-bd/unlearning/actions/workflows/ci.yml/badge.svg)](https://github.com/abdullah-x-bd/unlearning/actions/workflows/ci.yml)
 
-This repository is the experimental artifact for a ground-up reconstruction of **Unlearning at Scale: Implementing the Right to be Forgotten in Large Language Models**. The paper is downstream of the artifact: the old manuscript supplies hypotheses, not evidence, and manuscript claims are written only from frozen experiment outputs.
+Experimental artifact for a ground-up reconstruction of **Unlearning at Scale: Implementing the Right to be Forgotten in Large Language Models**.
 
-## Research question
+The central question is not only how to edit a trained model after a deletion request. It is whether training itself can be engineered so that a future deletion request becomes a reproducible counterfactual computation.
 
-Can language-model training be engineered so that a later data-deletion request becomes a reproducible counterfactual computation rather than an ad hoc post-training edit?
+## Core idea
 
-The exact target is a **trace-preserving deletion counterfactual**. The execution plan fixes microbatch slots, RNG seeds, optimizer-step boundaries and learning-rate values. Forgotten records contribute zero loss while the original trace remains fixed. Ordinary densely repacked retraining is measured separately because it changes the computation.
+Most machine-unlearning methods start from a trained model and try to remove the influence of a forget set afterward.
 
-## Research design
+This project instead records enough of the original training execution to define and reproduce a **trace-preserving deletion counterfactual**.
 
-The rebuilt project has three deliberately different empirical studies.
+The execution trace fixes:
 
-### Study A: controlled systems and scaling
+- sample slots
+- microbatch seeds
+- optimizer-step boundaries
+- learning-rate values
+- accumulation structure
 
-Pythia + WikiText-103 is the systems study. It measures exactness, model scale, deletion geometry, deterministic execution, checkpoint spacing, provenance cost, physical redaction and replay latency without changing model family at every scale.
+When records are forgotten, their original slots remain in the trace but contribute zero loss. The records themselves can then be physically removed from the replay data store.
 
-Primary models:
+This distinction matters because ordinary retain-only retraining changes the computation. Repacking retained examples can change batch shapes, RNG consumption, dropout masks, accumulation boundaries, optimizer steps, learning-rate schedules, and floating-point reduction order.
 
-- `EleutherAI/pythia-160m`
-- `EleutherAI/pythia-410m`
-- `EleutherAI/pythia-1b`
-- `EleutherAI/pythia-1.4b`
-- `EleutherAI/pythia-2.8b`
+The exact target in this repository is therefore:
 
-The completed paid releases currently cover Pythia 160M and Pythia 2.8B. Intermediate Pythia sizes remain optional rather than prerequisites for the manuscript.
-
-Human-readable configs use Pythia `step143000`; release execution resolves it to a full 40-character Hugging Face commit SHA through the artifact lock.
-
-### Study B: first-class standardized TOFU benchmark
-
-The standardized benchmark uses **Llama 3.2 1B Instruct + TOFU** and a pinned OpenUnlearning checkout. The TOFU exporter reproduces OpenUnlearning's Llama chat template and stores `labels.npy` so training loss is restricted to the final assistant response rather than prompt/system tokens.
-
-Splits:
-
-- `forget01` / `retain99`
-- `forget05` / `retain95`
-- `forget10` / `retain90`
-
-Publication approximate baselines come from OpenUnlearning, not our local reference implementations:
-
-- GradAscent
-- GradDiff
-- NPO
-- SimNPO
-
-The same pinned OpenUnlearning evaluator is used for standardized benchmark metrics. Direct comparison tables must use the same chosen target checkpoint and retain reference.
-
-### Study C: MUSE external validation
-
-MUSE is a larger, budget-dependent extension after Studies A and B. The planned track covers News and Books, removal-size scaling and sequential-deletion sustainability. Both the OpenUnlearning integration and original MUSE repository are pinned by commit.
-
-See [`docs/EXTERNAL_BENCHMARKS.md`](docs/EXTERNAL_BENCHMARKS.md).
-
-## Pinned external research code
-
-External repositories are not copied into this project. `scripts/bootstrap_upstreams.py` fetches detached checkouts at commits recorded in `external/upstreams.lock.yaml`:
-
-- OpenUnlearning: `4ad738aaf60f6a4385f6e2506d01da99e76c31f3`
-- original MUSE implementation: `6d4fdcbdebe4ad46dccaf70f8526cd23ecff609e`
-- Pythia reference repository: `a19eecb807ec2c79a39ebf18108816e6ffffc1d5`
-
-## Artifact freezing
-
-`locks/artifact-sources.yaml` enumerates remote model/dataset refs and prepared datasets. Before any publication run:
-
-```bash
-python scripts/bootstrap_upstreams.py
-python scripts/freeze_artifacts.py
-python scripts/verify_release_lock.py
+```text
+original training trace
+        |
+        +--> full-data replay
+        |
+        +--> same trace with forgotten slots contributing zero loss
+                         |
+                         +--> deletion oracle
+                         |
+                         +--> replay after physical deletion
 ```
 
-The generated `locks/artifacts.lock.json` contains full Hugging Face commit SHAs, exact external Git commits, every prepared-dataset file SHA-256 and a directory digest. Release runners refuse to execute if the source manifest changes, an upstream checkout moves or a prepared dataset no longer matches its lock.
+The final test is state equality, not merely similar behavior.
 
-The final `artifacts.lock.json` is generated **after** dataset preparation and then frozen with the release evidence.
+## Frozen results
 
-## Exact replay core
+Two paid GPU releases are complete and frozen.
 
-Implemented mechanisms include:
+| Release | Hardware | Identity replay | Deletion replay | Physical redaction |
+| --- | --- | --- | --- | --- |
+| Pythia 160M | RTX A6000 | exact | exact for early 0.1%, middle 1%, late 1%, random 5% | yes |
+| Pythia 2.8B | A100-SXM4-80GB | exact | exact for random 5% | yes |
 
-- immutable microbatch execution plans
-- deterministic per-microbatch RNG seeds
-- fixed accumulation boundaries
+### Pythia 160M
+
+Identity replay reproduced the original model and optimizer exactly across **162,322,944 model elements**.
+
+For all four tested deletion geometries, slot-preserving replay matched the trace-preserving deletion oracle exactly. Physical filtering and densely repacked retain-only retraining diverged from the oracle in every tested scenario.
+
+Release record:
+[`results/releases/pythia-160m-2026-08-11/`](results/releases/pythia-160m-2026-08-11/README.md)
+
+### Pythia 2.8B
+
+Identity replay reproduced the original run exactly across **388 tensors and 2,775,208,960 model elements**:
+
+- unequal tensors: `0`
+- unequal elements: `0`
+- maximum absolute difference: `0.0`
+- L2 difference: `0.0`
+- optimizer hash equal: `true`
+
+For a random 5% deletion request, **1,013 of 20,256 records** were physically removed. Replay from the redacted store reproduced the deletion oracle exactly across all 2,775,208,960 model elements and the optimizer state.
+
+Release record:
+[`results/releases/pythia-2.8b-2026-08-11/`](results/releases/pythia-2.8b-2026-08-11/README.md)
+
+## What the results establish
+
+Under the pinned single-GPU environments used in the frozen releases, the evidence supports the following systems claims:
+
+- deterministic no-deletion replay can reproduce the original model and optimizer exactly
+- trace-preserving deletion replay can reproduce the deletion counterfactual exactly
+- exact replay remains possible after forgotten token rows have been physically removed from the replay store
+- preserving logical slots is materially different from physically filtering or densely repacking retained examples
+- the result scales from Pythia 160M to Pythia 2.8B in the tested environments
+
+The evidence does **not** establish:
+
+- multi-GPU exactness
+- exactness under arbitrary hardware or software stacks
+- standardized semantic-unlearning performance on TOFU or MUSE
+- superiority over approximate methods such as NPO or GradDiff
+- direct satisfaction of any legal erasure obligation
+
+The current claim boundary is maintained in [`docs/CLAIMS_LEDGER.md`](docs/CLAIMS_LEDGER.md).
+
+## Provenance and replay system
+
+The implementation in `src/unlearning_at_scale/` includes:
+
+- immutable execution plans
+- deterministic per-microbatch RNG seeding
+- fixed gradient-accumulation boundaries
 - float32 learning-rate values in the trace
-- 32-byte WAL records with CRC32
-- segment SHA-256 verification
-- ordered-ID manifest with SHA-256/HMAC support
-- exact model-state and optimizer-state hashing
-- checkpoint restore and replay
-- independent trace-preserving deletion oracle
-- slot-preserving masked replay
-- physical-row filtering replay
-- repacked retain-only counterfactual
-- physically materialized redacted token stores
-- optional benchmark label masks
+- checkpoint recovery
+- exact model and optimizer hashing
+- trace-preserving deletion oracles
+- slot-preserving redacted replay
+- physical filtering and repacked counterfactuals
+- physical token-store redaction
 - provenance-field ablations
-- checkpoint/replay tradeoff sweeps
-- exact XOR rollback patches
+- checkpoint-spacing sweeps
+- XOR rollback experiments
 - cohort-scoped LoRA experiments
-- approximate curvature hot path
+- approximate curvature-based deletion experiments
 
-## WAL scope
+### WAL format
 
-Each binary WAL record is exactly 32 bytes:
+Each binary WAL record is exactly **32 bytes**:
 
 ```text
 uint64 ordered_sample_ids_digest
@@ -116,45 +127,70 @@ uint16 flags
 uint32 crc32
 ```
 
-The ordered IDs are stored separately. Every run reports WAL bytes, manifest bytes and total provenance cost. The project never treats 32 bytes as total provenance storage.
+Ordered sample IDs are stored separately in a manifest. The repository reports WAL bytes, manifest bytes, and total provenance cost independently.
 
-## Exactness evidence
+For the frozen releases:
 
-Every exact comparison records model SHA-256, optimizer SHA-256, exact-hash equality, unequal tensors/elements, maximum absolute difference, L2 difference, applied/skipped updates, runtime, checkpoint size and replay distance. Byte-exact claims require both state hashes and tensor comparison to agree.
+| Release | WAL records | WAL bytes | Ordered-ID manifest | Total provenance |
+| --- | ---: | ---: | ---: | ---: |
+| Pythia 160M | 5,064 | 162,048 | 1,134,250 | 1,296,298 |
+| Pythia 2.8B | 20,256 | 648,192 | 3,453,690 | 4,101,882 |
 
-Frozen release records:
+The 32-byte figure applies only to the fixed binary WAL record. It is not the total provenance footprint.
 
-- [`Pythia 160M, 2026-08-11`](results/releases/pythia-160m-2026-08-11/README.md): exact identity replay and exact slot-preserving deletion replay across four deletion geometries, with filter and repacked counterfactuals diverging.
-- [`Pythia 2.8B, 2026-08-11`](results/releases/pythia-2.8b-2026-08-11/README.md): exact identity replay across 2,775,208,960 model elements and exact random-5% trace-preserving deletion replay from a physically redacted store, including optimizer-state identity.
+## Experimental program
 
-## Prepare Study A data
+### Study A: controlled systems and scaling
 
-```bash
-python -m pip install -e '.[llm,dev]'
-python scripts/prepare_dataset.py \
-  --dataset Salesforce/wikitext \
-  --subset wikitext-103-raw-v1 \
-  --model EleutherAI/pythia-160m \
-  --output data/prepared/wikitext103-pythia-256 \
-  --max-records 20000 \
-  --sequence-length 256
-```
+Pythia + WikiText-103 isolates systems questions such as exactness, deletion geometry, replay policy, checkpoint placement, provenance cost, physical redaction, and model scale.
 
-## Prepare Study B data
+Completed publication-scale releases:
 
-First freeze the remote refs so the full Llama and TOFU revisions are known. Then use those exact SHAs with:
+- Pythia 160M
+- Pythia 2.8B
 
-```bash
-python scripts/prepare_tofu_openunlearning.py \
-  --output data/prepared/tofu-llama32-1b-openunlearning \
-  --model-revision <FULL_LLAMA_SHA> \
-  --dataset-revision <FULL_TOFU_SHA> \
-  --max-length 512
-```
+Intermediate Pythia sizes remain available but are no longer prerequisites for the central scaling claim.
 
-The exporter writes immutable IDs, input IDs, attention masks, answer-only labels, split-ID files and per-file hashes.
+### Study B: standardized TOFU validation
 
-## Software verification
+The next empirical priority is **Llama 3.2 1B Instruct + TOFU** using the pinned OpenUnlearning framework.
+
+The repository already contains:
+
+- OpenUnlearning-compatible TOFU preprocessing
+- answer-only label masks matching the benchmark supervision structure
+- `forget01`, `forget05`, and `forget10` split support
+- checkpoint export for external evaluation
+- a pinned OpenUnlearning adapter
+- publication-authoritative GradAscent, GradDiff, NPO, and SimNPO hooks
+
+The purpose of Study B is different from Study A. Study A tests exact state reconstruction. Study B tests whether the resulting exact deletion counterfactual behaves appropriately under standardized unlearning metrics and how it compares with established approximate methods.
+
+See [`docs/EXTERNAL_BENCHMARKS.md`](docs/EXTERNAL_BENCHMARKS.md) and [`docs/BASELINES.md`](docs/BASELINES.md).
+
+### Study C: MUSE
+
+MUSE remains an optional external-validation extension after TOFU. It is not required before the main manuscript is rebuilt.
+
+## Reproducibility
+
+Remote models, datasets, and research repositories are pinned before publication runs.
+
+`locks/artifact-sources.yaml` defines source artifacts. `locks/artifacts.lock.json` records resolved Hugging Face commit SHAs, external Git commits, prepared-dataset file hashes, and directory digests.
+
+Publication runners refuse to execute when the frozen lock no longer verifies.
+
+Pinned external research code includes:
+
+- OpenUnlearning at `4ad738aaf60f6a4385f6e2506d01da99e76c31f3`
+- MUSE reference implementation at `6d4fdcbdebe4ad46dccaf70f8526cd23ecff609e`
+- Pythia reference repository at `a19eecb807ec2c79a39ebf18108816e6ffffc1d5`
+
+Each frozen release records the resolved model revision, execution-plan hash, WAL and manifest hashes, environment snapshot, GPU probe, result summaries, workflow identifiers, artifact digest, and cost metadata.
+
+## Quick start
+
+Install the project and run the software test suite:
 
 ```bash
 python -m pip install -e '.[dev]'
@@ -162,74 +198,51 @@ pytest
 uas core-smoke --output runs/core-smoke
 ```
 
-The tiny CI model is software testing only and never scientific evidence.
+Prepare and verify frozen research dependencies:
 
-## Publication release runs
+```bash
+python scripts/bootstrap_upstreams.py
+python scripts/freeze_artifacts.py
+python scripts/verify_release_lock.py
+```
 
-Do not use an unlocked config for publication evidence. After the final data lock exists:
+Run a locked release configuration:
 
 ```bash
 python scripts/run_release.py configs/pythia-160m.yaml
-python scripts/run_release_matrix.py configs/matrix-main.yaml
-python scripts/run_release.py configs/benchmarks/tofu-llama32-1b-trace.yaml
 ```
 
-The release scripts replace the readable model revision with the exact SHA stored in `locks/artifacts.lock.json`.
+The full experimental sequence is documented in [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
-## Official OpenUnlearning evaluation
+## Repository map
 
-Fetch the pinned checkout and install its environment according to the upstream repository. Then evaluate one of our exported/local model checkpoints with:
-
-```bash
-python scripts/openunlearning_adapter.py tofu-eval \
-  --checkpoint <MODEL_CHECKPOINT_DIRECTORY> \
-  --forget-split forget10
+```text
+src/unlearning_at_scale/   core replay and deletion system
+configs/                   experiment configurations
+scripts/                   data, release, benchmark, and audit tooling
+locks/                     frozen artifact and environment metadata
+external/                  pinned upstream definitions
+results/releases/          immutable empirical release records
+docs/                      experiment design, claims, baselines, reproducibility
 ```
 
-Run publication-authoritative approximate baselines with:
+## Research status
 
-```bash
-python scripts/openunlearning_adapter.py tofu-baselines \
-  --forget-split forget10 \
-  --target-checkpoint <SAME_TARGET_CHECKPOINT>
-```
+**Core replay system:** implemented
 
-The adapter stores the upstream commit and exact commands in machine-readable manifests.
+**Frozen systems evidence:** Pythia 160M and Pythia 2.8B complete
 
-Our local `src/unlearning_at_scale/baselines.py` and `scripts/run_approximate_baselines.py` remain **sanity/reference implementations only**.
+**Exact 2.8B result:** complete
 
-## MUSE extension
+**Standardized TOFU/OpenUnlearning validation:** next empirical priority
 
-After the Pythia and TOFU 1B studies are complete:
+**MUSE:** optional after TOFU
 
-```bash
-python scripts/openunlearning_adapter.py muse --data-split News
-python scripts/openunlearning_adapter.py muse --data-split Books
-```
+**Paper rewrite:** downstream of the final evidence set
 
-MUSE is explicitly excluded from the initial low-budget run.
+## Citation
 
-## Scientific claim discipline
-
-Failures are results. Distributed exactness is not claimed until a dedicated multi-GPU study exists. Approximate methods are never called exact because a behavioral audit passes. Legal erasure implications are kept distinct from technical state-equivalence claims.
-
-The full sequence is in [`docs/RUNBOOK.md`](docs/RUNBOOK.md), candidate claims in [`docs/CLAIMS_LEDGER.md`](docs/CLAIMS_LEDGER.md), baseline policy in [`docs/BASELINES.md`](docs/BASELINES.md), and reproducibility requirements in [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md).
-
-## Status
-
-**Core experimental framework:** implemented
-
-**Pinned external benchmark architecture:** implemented
-
-**Artifact-freeze/preflight layer:** implemented
-
-**Paid systems releases:** Pythia 160M and Pythia 2.8B completed and frozen
-
-**Pythia 2.8B scale result:** exact single-GPU identity replay and exact random-5% trace-preserving deletion replay from a physically redacted store
-
-**Standardized TOFU/OpenUnlearning benchmark:** not yet run
-
-**Paper rewrite:** intentionally deferred until the remaining evidence decision is made
+Citation metadata is available in [`CITATION.cff`](CITATION.cff).
 
 ## License
 
