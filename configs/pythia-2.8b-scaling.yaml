@@ -2,6 +2,7 @@ seed: 2026
 strict_determinism: true
 materialize_redacted_store: true
 release_mode: true
+release_phase_smoke: true
 output_dir: runs/pythia-2.8b
 model:
   name: EleutherAI/pythia-2.8b
