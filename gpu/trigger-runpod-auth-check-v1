@@ -1,2 +1,0 @@
-This marker triggers the temporary RunPod integration check on the feature branch.
-Attempt 3 runs offline tests, replay smoke, and API authentication.
