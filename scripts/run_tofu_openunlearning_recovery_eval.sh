@@ -87,22 +87,28 @@ import sys
 sys.path.insert(0, str(Path('external/open-unlearning/src').resolve()))
 from evals.metrics.utils import evaluate_probability
 
+assert torch.cuda.is_available()
+device = torch.device('cuda')
 class Dummy:
-    device = torch.device('cpu')
+    device = device
     def __call__(self, **batch):
         class Out: pass
         out = Out()
-        # Shape [batch=1, seq=3, vocab=4], BF16 specifically exercises the fixed path.
-        out.logits = torch.tensor([[[1.,2.,3.,4.],[4.,3.,2.,1.],[1.,1.,1.,1.]]], dtype=torch.bfloat16)
+        out.logits = torch.tensor(
+            [[[1.,2.,3.,4.],[4.,3.,2.,1.],[1.,1.,1.,1.]]],
+            dtype=torch.bfloat16,
+            device=device,
+        )
         return out
 
 batch = {
-    'input_ids': torch.tensor([[1,2,3]]),
-    'attention_mask': torch.tensor([[1,1,1]]),
-    'labels': torch.tensor([[-100,2,3]]),
+    'input_ids': torch.tensor([[1,2,3]], device=device),
+    'attention_mask': torch.tensor([[1,1,1]], device=device),
+    'labels': torch.tensor([[-100,2,3]], device=device),
 }
 result = evaluate_probability(Dummy(), batch)
 assert len(result) == 1 and isinstance(result[0]['avg_loss'], float)
+assert isinstance(result[0]['prob'], float)
 print('BF16 OpenUnlearning probability-metric execution gate passed', flush=True)
 PY
 
