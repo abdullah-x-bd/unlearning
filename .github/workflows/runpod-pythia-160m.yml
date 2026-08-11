@@ -1,0 +1,191 @@
+name: RunPod Pythia 160M release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-pythia-160m-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runpod-pythia-160m-release
+  cancel-in-progress: false
+
+jobs:
+  pythia-160m:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      MAX_HOURLY_COST: "0.75"
+      MAX_RUNTIME_MINUTES: "300"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify RunPod credential before allocating compute
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          python scripts/runpod_control.py auth-check
+
+      - name: Generate ephemeral SSH key
+        run: |
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+
+      - name: Allocate one guarded GPU Pod
+        id: pod
+        run: |
+          python scripts/runpod_control.py create \
+            --name "uas-pythia160-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --public-key-file .runpod/id_ed25519.pub \
+            --max-hourly-cost "$MAX_HOURLY_COST" \
+            --wait-seconds 900 \
+            --output runpod-allocation.json
+          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSH daemon
+        run: |
+          for attempt in $(seq 1 90); do
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              "root@${{ steps.pod.outputs.host }}" 'echo ssh-ready'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become ready" >&2
+          exit 1
+
+      - name: Record orchestration metadata
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = {
+              "github_repository": os.environ["GITHUB_REPOSITORY"],
+              "github_sha": os.environ["GITHUB_SHA"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "github_run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "github_workflow": os.environ["GITHUB_WORKFLOW"],
+          }
+          Path("gpu-artifacts/github-orchestration.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          PY
+
+      - name: Run frozen Pythia 160M experiment on Pod
+        id: experiment
+        continue-on-error: true
+        run: |
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            runpod-allocation.json \
+            "root@${{ steps.pod.outputs.host }}:/workspace/runpod-allocation.json"
+
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' MAX_RUNTIME_MINUTES='${MAX_RUNTIME_MINUTES}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+
+          nohup bash -lc 'sleep 19800; runpodctl pod delete "$RUNPOD_POD_ID"' \
+            >/tmp/uas-self-destruct.log 2>&1 &
+
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+
+          MAX_RUNTIME_MINUTES="$MAX_RUNTIME_MINUTES" bash scripts/run_first_gpu_release.sh
+          REMOTE
+
+      - name: Collect compact evidence before terminating Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          for file in \
+            pythia-160m-evidence.tar.gz \
+            gpu-run.log \
+            gpu-exit-code.txt \
+            gpu-probe.json \
+            gpu-environment-before-run.json \
+            gpu-environment-after-run.json; do
+            scp \
+              -i .runpod/id_ed25519 \
+              -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record bounded cost estimate
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          allocation = json.loads(Path("runpod-allocation.json").read_text())
+          start = int("${{ steps.pod.outputs.allocated_epoch }}")
+          elapsed = max(0, time.time() - start)
+          hourly = float(allocation["cost_per_hr"])
+          payload = {
+              "elapsed_seconds_until_cleanup": elapsed,
+              "reported_hourly_gpu_cost": hourly,
+              "estimated_gpu_cost_until_cleanup": hourly * elapsed / 3600.0,
+              "hard_hourly_cap": float(os.environ["MAX_HOURLY_COST"]),
+              "hard_experiment_runtime_minutes": int(os.environ["MAX_RUNTIME_MINUTES"]),
+              "note": "Estimate excludes any separately billed storage or platform adjustments.",
+          }
+          Path("gpu-artifacts/cost-estimate.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload GPU evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pythia-160m-gpu-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 6
+
+      - name: Enforce experiment success
+        if: always()
+        run: |
+          if [[ "${{ steps.experiment.outcome }}" != "success" ]]; then
+            echo "The remote experiment did not complete successfully." >&2
+            exit 1
+          fi
