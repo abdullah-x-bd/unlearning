@@ -11,7 +11,7 @@ import yaml
 from unlearning_at_scale.artifacts import revision_from_lock, verify_lock
 from unlearning_at_scale.dataset import TokenStore
 from unlearning_at_scale.determinism import configure_determinism, resolve_cuda_index
-from unlearning_at_scale.experiment import _release
+from unlearning_at_scale.lifecycle import release_phase
 from unlearning_at_scale.modeling import load_causal_lm
 from unlearning_at_scale.plan import build_plan
 from unlearning_at_scale.training import TraceRunner, create_optimizer
@@ -72,7 +72,7 @@ def main() -> None:
     allocated_before_release = torch.cuda.memory_allocated(cuda_index)
     peak_before_release = torch.cuda.max_memory_allocated(cuda_index)
 
-    _release(runner, optimizer, model, tokenizer)
+    release_phase(runner, optimizer, model, tokenizer)
     gc.collect()
     torch.cuda.empty_cache()
     torch.cuda.synchronize(cuda_index)
@@ -91,7 +91,7 @@ def main() -> None:
     second_model.to(device)
     torch.cuda.synchronize(cuda_index)
     allocated_after_second_load = torch.cuda.memory_allocated(cuda_index)
-    _release(second_model, second_tokenizer)
+    release_phase(second_model, second_tokenizer)
     gc.collect()
     torch.cuda.empty_cache()
     torch.cuda.synchronize(cuda_index)
