@@ -1,0 +1,26 @@
+{
+  "artifact_zip_sha256": "50f7e82eed8d23ad64aa431d27f9dd91e400718f863860118f016b249de5d9c5",
+  "files": [
+    {"bytes": 1012, "path": "results/disk-after.txt", "sha256": "49d3e9b4d15e99ec2e7d4f672e3b1f7bd9b94dd823e27f9527a9fb45e4ddac98"},
+    {"bytes": 1012, "path": "results/disk-before.txt", "sha256": "7345be5e1f340465e42a5a12f83c91177507726fc09625a9b24a435394a5a9fc"},
+    {"bytes": 631, "path": "results/gpu-probe-2.8b-full.json", "sha256": "368a9cc828639fbdab1eef07effaae2367e41ed9d3e9825bdc41de4bf56ba841"},
+    {"bytes": 31668, "path": "results/pythia-2.8b-full.log", "sha256": "2371daca1fa7e8561d0ef9317195c8006532e8b396f60a4d625af1ebefd309e5"},
+    {"bytes": 2536, "path": "results/runpod-allocation.json", "sha256": "ccfbac757ea9035521bd3820bc91a2fe9ea0bf9887893670ff33b9b0675fba2a"},
+    {"bytes": 1059, "path": "runs/pythia-2.8b/config.resolved.json", "sha256": "3e67564db11b00b3cbd57101508dc65089591c31555ba30e0fb45656e96c99f3"},
+    {"bytes": 696, "path": "runs/pythia-2.8b/environment.json", "sha256": "56ee899ea2ad3387d26ab391d1f6cb394cace186e3619f03e472e6a8c8a6be18"},
+    {"bytes": 3009207, "path": "runs/pythia-2.8b/execution_plan.jsonl", "sha256": "17ae171925ebd4b9c1beb393c7887d14b96ca09790da0b59a521fdf60198c431"},
+    {"bytes": 16268, "path": "runs/pythia-2.8b/forget/random-5pct/forget_ids.txt", "sha256": "305630144187ff741ee1f017d2361396397cacf6e0674d4739295ba73461a3c3"},
+    {"bytes": 577, "path": "runs/pythia-2.8b/forget/random-5pct/oracle/summary.json", "sha256": "98974fb273c0cf4cb19ced9722e86154f792ec00289208efe1aedfa645a99e86"},
+    {"bytes": 860, "path": "runs/pythia-2.8b/forget/random-5pct/replay-slot_mask/summary.json", "sha256": "c0ea22531f08f5781e22a1fc336862b7012f4ac7e6f2138ddbea5243ca7dcb2a"},
+    {"bytes": 1362, "path": "runs/pythia-2.8b/forget/random-5pct/summary.json", "sha256": "f92afb6beb7e57629975fd20ff36ec8e087a943c66fa6fe4701cc2b88366b8a6"},
+    {"bytes": 3453690, "path": "runs/pythia-2.8b/original/manifest.jsonl", "sha256": "326b4d3bdad1b70cb767eec8335a8339c78c78ef626f1bb22bbc41336ccdbfbb"},
+    {"bytes": 65, "path": "runs/pythia-2.8b/original/manifest.jsonl.sha256", "sha256": "44a7a3bbd8b5447fc4d6690edab4da2fe02dd7d1b46217139dd2ec3840932833"},
+    {"bytes": 1264, "path": "runs/pythia-2.8b/original/summary.json", "sha256": "bfc278296e143fd4614005a2712dd5e94e08341f804d708658ede0ed5d0aba33"},
+    {"bytes": 648192, "path": "runs/pythia-2.8b/original/trace.wal", "sha256": "2ddf4c57c580308de91a18a46f7e6d2d6537e40aab8df500665a3b4fa4f2a5b9"},
+    {"bytes": 65, "path": "runs/pythia-2.8b/original/trace.wal.sha256", "sha256": "3ccd6d16abc7db73e39d7f8df40732dc3514099415e6dfa8c38e33b95b362fa9"},
+    {"bytes": 655, "path": "runs/pythia-2.8b/preflight/gpu-phase-release-smoke.json", "sha256": "b05a0b7f422b8f2253c353cbe73fe9d71524010d555650e202e9d2c0b19cc288"},
+    {"bytes": 846, "path": "runs/pythia-2.8b/replay-identity/summary.json", "sha256": "8c9727582ed64aa1f91227a2b484bbb06196ff82ef5cf9ea77875b0bc7787fe8"},
+    {"bytes": 3984, "path": "runs/pythia-2.8b/summary.json", "sha256": "c764732c68a8969c1b9dbccf50d7b15ffdb60a16ad53bdb2da2e1c7d90705bfa"}
+  ],
+  "internal_tar_sha256": "a16909e4f67967b3c77a2bef215ef680a59d33229807ca36054b2160ed77840c"
+}

@@ -1,0 +1,25 @@
+{
+  "comparison_to_oracle": {
+    "exact": true,
+    "l2_diff": 0.0,
+    "left_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+    "max_abs_diff": 0.0,
+    "right_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+    "total_elements": 2775208960,
+    "total_tensors": 388,
+    "unequal_elements": 0,
+    "unequal_tensors": 0
+  },
+  "model_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+  "optimizer_hash_equal_to_oracle": true,
+  "optimizer_sha256": "e7c6cce3619f0557275c8ae8e6a5db3b1e001ab868d844003c1ba17a1144ba89",
+  "stats": {
+    "applied_updates": 1266,
+    "logical_steps_seen": 1266,
+    "retained_examples": 19243,
+    "retained_tokens": 1800980,
+    "skipped_updates": 0,
+    "summed_training_loss": 4498091.953546286,
+    "wall_seconds": 3136.2041834518313
+  }
+}

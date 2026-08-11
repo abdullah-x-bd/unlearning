@@ -1,0 +1,17 @@
+{
+  "bf16_supported": true,
+  "compute_capability": [8, 0],
+  "cuda_available": true,
+  "cuda_runtime": "12.4",
+  "cudnn": 90100,
+  "device_count": 1,
+  "device_name": "NVIDIA A100-SXM4-80GB",
+  "free_memory_bytes_at_probe": 84375502848,
+  "nvidia_smi": "NVIDIA A100-SXM4-80GB, GPU-747359ea-6f8d-13f6-64c3-76c929d4deae, 550.127.05, 81920 MiB",
+  "platform": "Linux-6.8.0-52-generic-x86_64-with-glibc2.35",
+  "python": "3.11.10 (main, Sep  7 2024, 18:35:41) [GCC 11.4.0]",
+  "reported_total_memory_bytes": 84974239744,
+  "same_process_matmul_exact": true,
+  "torch": "2.4.1+cu124",
+  "total_memory_bytes": 84974239744
+}

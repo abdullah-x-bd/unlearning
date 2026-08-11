@@ -1,0 +1,8 @@
+{
+  "elapsed_seconds_until_cleanup": 13169.826914072037,
+  "estimated_gpu_cost_until_cleanup": 5.816673553715149,
+  "four_pass_design": true,
+  "hard_experiment_runtime_minutes": 250,
+  "hard_hourly_cap": 2.0,
+  "reported_hourly_gpu_cost": 1.59
+}

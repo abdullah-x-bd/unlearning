@@ -1,0 +1,20 @@
+{
+  "allocated_after_release_bytes": 67108864,
+  "allocated_after_second_load_bytes": 11236626944,
+  "allocated_after_second_release_bytes": 67108864,
+  "allocated_before_release_bytes": 33507504640,
+  "model": "EleutherAI/pythia-2.8b",
+  "one_update_stats": {
+    "applied_updates": 1,
+    "logical_steps_seen": 1,
+    "retained_examples": 16,
+    "retained_tokens": 2245,
+    "skipped_updates": 0,
+    "summed_training_loss": 6932.554756164551,
+    "wall_seconds": 2.756349891424179
+  },
+  "peak_before_release_bytes": 45676332544,
+  "release_threshold_bytes": 536870912,
+  "revision": "dbe7ae300a54abcdc475a33907b3dff81d25709f",
+  "status": "passed"
+}

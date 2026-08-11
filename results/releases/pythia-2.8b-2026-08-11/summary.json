@@ -1,0 +1,105 @@
+{
+  "config_sha256": "96962790099eaa4a7e9d54aba18214a4765a6c9c41266653d48ba4b0acb6254e",
+  "original": {
+    "base_checkpoint": {
+      "bytes": 11100993590,
+      "model_sha256": "9537a757275c60af3e2559d35dfc33a15b97fdb8cfa96d58bc4406224c966f1f",
+      "next_optimizer_step": 0,
+      "optimizer_sha256": "1c0dc7ec53afdadea3843d508e865ef0a9dc0ee3ae1818b168b28e16c9daeaed",
+      "path": "runs/pythia-2.8b/original/checkpoints/step-000000.pt"
+    },
+    "final_model_state_bytes": 11100994406,
+    "model_sha256": "c68bcd5092e7c28dbb94e812f6ad62b64d4321bb4af0af3ef7784bb494048759",
+    "optimizer_sha256": "fbaa0735422bc75e4855d5bb4e56b94d4cdc40a7a4c5a63b488f9a142379915f",
+    "resolved_model_commit": "dbe7ae300a54abcdc475a33907b3dff81d25709f",
+    "stats": {
+      "applied_updates": 1266,
+      "logical_steps_seen": 1266,
+      "retained_examples": 20256,
+      "retained_tokens": 1896924,
+      "skipped_updates": 0,
+      "summed_training_loss": 4726865.869795322,
+      "wall_seconds": 3182.8348238542676
+    },
+    "wal": {
+      "manifest_bytes": 3453690,
+      "manifest_sha256": "326b4d3bdad1b70cb767eec8335a8339c78c78ef626f1bb22bbc41336ccdbfbb",
+      "record_size": 32,
+      "records": 20256,
+      "total_bytes_per_microbatch": 202.50207345971563,
+      "total_provenance_bytes": 4101882,
+      "wal_bytes": 648192,
+      "wal_sha256": "2ddf4c57c580308de91a18a46f7e6d2d6537e40aab8df500665a3b4fa4f2a5b9"
+    }
+  },
+  "plan_sha256": "17ae171925ebd4b9c1beb393c7887d14b96ca09790da0b59a521fdf60198c431",
+  "replay_identity": {
+    "model_comparison": {
+      "exact": true,
+      "l2_diff": 0.0,
+      "left_sha256": "c68bcd5092e7c28dbb94e812f6ad62b64d4321bb4af0af3ef7784bb494048759",
+      "max_abs_diff": 0.0,
+      "right_sha256": "c68bcd5092e7c28dbb94e812f6ad62b64d4321bb4af0af3ef7784bb494048759",
+      "total_elements": 2775208960,
+      "total_tensors": 388,
+      "unequal_elements": 0,
+      "unequal_tensors": 0
+    },
+    "model_sha256": "c68bcd5092e7c28dbb94e812f6ad62b64d4321bb4af0af3ef7784bb494048759",
+    "optimizer_hash_equal": true,
+    "optimizer_sha256": "fbaa0735422bc75e4855d5bb4e56b94d4cdc40a7a4c5a63b488f9a142379915f",
+    "stats": {
+      "applied_updates": 1266,
+      "logical_steps_seen": 1266,
+      "retained_examples": 20256,
+      "retained_tokens": 1896924,
+      "skipped_updates": 0,
+      "summed_training_loss": 4726865.869795322,
+      "wall_seconds": 3192.4929483532906
+    }
+  },
+  "scenarios": [
+    {
+      "checkpoint_step": 0,
+      "earliest_affected_step": 2,
+      "forget_count": 1013,
+      "name": "random-5pct",
+      "redaction": {
+        "forgotten_ids_present": false,
+        "forgotten_records": 1013,
+        "labels_preserved": false,
+        "retained_records": 19243,
+        "source_directory": "data/prepared/wikitext103-pythia-256",
+        "source_records": 20256
+      },
+      "repacked": null,
+      "replay": {
+        "slot_mask": {
+          "comparison_to_oracle": {
+            "exact": true,
+            "l2_diff": 0.0,
+            "left_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+            "max_abs_diff": 0.0,
+            "right_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+            "total_elements": 2775208960,
+            "total_tensors": 388,
+            "unequal_elements": 0,
+            "unequal_tensors": 0
+          },
+          "model_sha256": "e23165a25eed20be896bd40ea3913dcf6e644c5f10ff54c16a35571a115df6f4",
+          "optimizer_hash_equal_to_oracle": true,
+          "optimizer_sha256": "e7c6cce3619f0557275c8ae8e6a5db3b1e001ab868d844003c1ba17a1144ba89",
+          "stats": {
+            "applied_updates": 1266,
+            "logical_steps_seen": 1266,
+            "retained_examples": 19243,
+            "retained_tokens": 1800980,
+            "skipped_updates": 0,
+            "summed_training_loss": 4498091.953546286,
+            "wall_seconds": 3136.2041834518313
+          }
+        }
+      }
+    }
+  ]
+}
