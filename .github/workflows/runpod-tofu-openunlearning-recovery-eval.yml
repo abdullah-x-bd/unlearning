@@ -1,0 +1,281 @@
+name: RunPod TOFU OpenUnlearning recovery evaluation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-tofu-openunlearning-recovery-eval-v1
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: runpod-tofu-openunlearning-recovery-eval
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      HF_TOKEN_PRIMARY: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
+      GITHUB_READ_TOKEN: ${{ github.token }}
+      MAX_HOURLY_COST: "0.70"
+      POD_SELF_DESTRUCT_SECONDS: "10800"
+      MIN_FREE_GPU_MIB: "45000"
+      MAX_GPU_ALLOCATION_ATTEMPTS: "4"
+      RECOVERY_ARTIFACT_ID: "9114652333"
+      RECOVERY_SOURCE_RUN_ID: "31519284938"
+      RECOVERY_ARTIFACT_ZIP_SHA256: "f7922732aacc4907d36191c59120e0bd6df2c0a38bc5d823744f2182ee1c6119"
+      RECOVERY_ARTIFACT_SIZE: "9921106210"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Zero-cost evaluator and recovery-artifact preflight
+        run: |
+          set -Eeuo pipefail
+          test -n "$RUNPOD_API_KEY"
+          test -n "$GITHUB_READ_TOKEN"
+          python -m pip install --disable-pip-version-check --quiet \
+            huggingface_hub==0.36.0 pyyaml==6.0.2
+          python scripts/runpod_control.py auth-check
+          python scripts/preflight_tofu_openunlearning.py
+
+          curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_READ_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${RECOVERY_ARTIFACT_ID}" \
+            > recovery-artifact-metadata.json
+          python - <<'PY'
+          import json, os
+          payload = json.load(open('recovery-artifact-metadata.json'))
+          assert payload['id'] == int(os.environ['RECOVERY_ARTIFACT_ID'])
+          assert payload['name'] == 'tofu-openunlearning-recovery-checkpoints'
+          assert payload['size_in_bytes'] == int(os.environ['RECOVERY_ARTIFACT_SIZE'])
+          assert payload.get('expired') is False
+          workflow_run = payload.get('workflow_run') or {}
+          assert workflow_run.get('id') == int(os.environ['RECOVERY_SOURCE_RUN_ID'])
+          print('Recovery artifact metadata gate passed; checkpoint archive is still available')
+          PY
+
+          python scripts/bootstrap_upstreams.py
+          test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
+          python scripts/patch_openunlearning_bf16_numpy.py
+          grep -F 'avg_losses = avg_losses.float().cpu().numpy().tolist()' external/open-unlearning/src/evals/metrics/utils.py
+          grep -F 'normalized_probs = normalized_probs.float().cpu().numpy().tolist()' external/open-unlearning/src/evals/metrics/utils.py
+          python - <<'PY'
+          import torch
+          x = torch.tensor([1.5], dtype=torch.bfloat16)
+          value = x.float().cpu().numpy().tolist()
+          assert value == [1.5]
+          print('BF16 to float32 to NumPy compatibility gate passed')
+          PY
+
+      - name: Generate ephemeral SSH and access-token files
+        run: |
+          set -Eeuo pipefail
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+          HF_ACCESS="${HF_TOKEN_PRIMARY:-$HF_TOKEN_ALT}"
+          test -n "$HF_ACCESS"
+          umask 077
+          printf '%s' "$HF_ACCESS" > .runpod/hf_token
+          printf '%s' "$GITHUB_READ_TOKEN" > .runpod/github_token
+
+      - name: Allocate one clean guarded RTX A6000 Pod
+        id: pod
+        run: |
+          set -Eeuo pipefail
+          accepted=0
+          for attempt in $(seq 1 "$MAX_GPU_ALLOCATION_ATTEMPTS"); do
+            echo "A6000 allocation attempt ${attempt}/${MAX_GPU_ALLOCATION_ATTEMPTS}"
+            rm -f runpod-allocation.json
+            python scripts/runpod_control.py create \
+              --name "uas-tofu-ou-recovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-a${attempt}" \
+              --public-key-file .runpod/id_ed25519.pub \
+              --gpu-types "NVIDIA RTX A6000" \
+              --max-hourly-cost "$MAX_HOURLY_COST" \
+              --wait-seconds 900 \
+              --output runpod-allocation.json
+
+            readarray -t allocation < <(python - <<'PY'
+          import json
+          p = json.load(open('runpod-allocation.json'))
+          print(p['pod_id']); print(p['host']); print(p['port'])
+          PY
+            )
+            pod_id="${allocation[0]}"; host="${allocation[1]}"; port="${allocation[2]}"
+
+            ssh_ready=0
+            for ssh_attempt in $(seq 1 90); do
+              if ssh -i .runpod/id_ed25519 -p "$port" \
+                -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=5 "root@$host" 'echo ssh-ready'; then
+                ssh_ready=1; break
+              fi
+              sleep 5
+            done
+            if [[ "$ssh_ready" != "1" ]]; then
+              python scripts/runpod_control.py delete --pod-id "$pod_id" || true
+              sleep 3; continue
+            fi
+
+            clean_log=".runpod/gpu-cleanliness-attempt-${attempt}.txt"
+            if ssh -i .runpod/id_ed25519 -p "$port" \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 "root@$host" \
+              "MIN_FREE_GPU_MIB='$MIN_FREE_GPU_MIB' bash -s" <<'REMOTE' | tee "$clean_log"
+          set -Eeuo pipefail
+          gpu_line="$(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits | head -n 1)"
+          gpu_name="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/^ +| +$/, "", $1); print $1}')"
+          total_mib="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/ /, "", $2); print $2}')"
+          free_mib="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/ /, "", $3); print $3}')"
+          compute_apps="$(nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader,nounits 2>/dev/null | sed '/^[[:space:]]*$/d' || true)"
+          echo "gpu_name=$gpu_name"
+          echo "total_mib=$total_mib"
+          echo "free_mib=$free_mib"
+          echo "minimum_free_mib=$MIN_FREE_GPU_MIB"
+          if [[ -n "$compute_apps" ]]; then
+            echo "foreign_compute_processes_present=true"; printf '%s\n' "$compute_apps"; exit 42
+          fi
+          echo "foreign_compute_processes_present=false"
+          (( free_mib >= MIN_FREE_GPU_MIB )) || exit 43
+          [[ "$gpu_name" == "NVIDIA RTX A6000" ]] || exit 44
+          echo "clean_gpu_gate=passed"
+          REMOTE
+            then
+              cp "$clean_log" .runpod/gpu-cleanliness-accepted.txt
+              echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+              accepted=1; break
+            fi
+            python scripts/runpod_control.py delete --pod-id "$pod_id" || true
+            sleep 3
+          done
+          [[ "$accepted" == "1" ]] || { echo "Could not obtain clean RTX A6000" >&2; exit 1; }
+
+      - name: Download recovered canonical checkpoints and run evaluation only
+        id: remote
+        continue-on-error: true
+        run: |
+          set -Eeuo pipefail
+          scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            runpod-allocation.json .runpod/hf_token .runpod/github_token \
+            "root@${{ steps.pod.outputs.host }}:/workspace/"
+
+          ssh -i .runpod/id_ed25519 -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' SELF_DESTRUCT='${POD_SELF_DESTRUCT_SECONDS}' RECOVERY_ARTIFACT_ID='${RECOVERY_ARTIFACT_ID}' RECOVERY_SHA='${RECOVERY_ARTIFACT_ZIP_SHA256}' REPOSITORY='${GITHUB_REPOSITORY}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          nohup bash -lc "sleep ${SELF_DESTRUCT}; runpodctl pod delete \$RUNPOD_POD_ID" >/tmp/uas-self-destruct.log 2>&1 &
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+          export HF_TOKEN="$(cat /workspace/hf_token)"
+          GH_TOKEN_VALUE="$(cat /workspace/github_token)"
+          rm -f /workspace/hf_token /workspace/github_token
+          export HF_HUB_DISABLE_TELEMETRY=1 TOKENIZERS_PARALLELISM=false WANDB_MODE=disabled
+
+          echo "Downloading preserved hash-verified checkpoint artifact ${RECOVERY_ARTIFACT_ID}"
+          curl -fL --retry 3 --retry-delay 3 \
+            -H "Authorization: Bearer ${GH_TOKEN_VALUE}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${REPOSITORY}/actions/artifacts/${RECOVERY_ARTIFACT_ID}/zip" \
+            -o /workspace/recovery.zip
+          unset GH_TOKEN_VALUE
+          observed="$(sha256sum /workspace/recovery.zip | awk '{print $1}')"
+          test "$observed" = "$RECOVERY_SHA"
+          test "$(unzip -Z1 /workspace/recovery.zip | wc -l)" -eq 1
+          test "$(unzip -Z1 /workspace/recovery.zip)" = "tofu-openunlearning-recovery.tar"
+          unzip -p /workspace/recovery.zip > /workspace/recovery.tar
+          rm -f /workspace/recovery.zip
+          tar -xf /workspace/recovery.tar -C /workspace/unlearning
+          rm -f /workspace/recovery.tar
+
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+          FIRST_EVAL_MINUTES=75 SECOND_EVAL_MINUTES=45 \
+            bash scripts/run_tofu_openunlearning_recovery_eval.sh
+          REMOTE
+
+      - name: Collect evaluation evidence
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          cp recovery-artifact-metadata.json gpu-artifacts/
+          cp .runpod/gpu-cleanliness-accepted.txt gpu-artifacts/ || true
+          for file in tofu-openunlearning-recovery-evidence.tar.gz tofu-openunlearning-recovery-evidence.sha256; do
+            scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 -o ConnectionAttempts=2 \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record bounded evaluation-only cost
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          mkdir -p gpu-artifacts
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          allocation = json.loads(Path('runpod-allocation.json').read_text())
+          elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
+          hourly = float(allocation['cost_per_hr'])
+          payload = {
+              'elapsed_seconds_until_cleanup': elapsed,
+              'reported_hourly_gpu_cost': hourly,
+              'estimated_gpu_cost_until_cleanup': hourly * elapsed / 3600.0,
+              'hard_hourly_cap': float(os.environ['MAX_HOURLY_COST']),
+              'training_passes': 0,
+              'optimizer_updates': 0,
+              'benchmark': 'OpenUnlearning TOFU forget10 evaluation-only recovery',
+              'recovery_artifact_id': int(os.environ['RECOVERY_ARTIFACT_ID']),
+          }
+          Path('gpu-artifacts/cost-estimate.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload recovery-evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-openunlearning-recovery-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 60
+          compression-level: 0
+
+      - name: Enforce evaluation success
+        if: always()
+        run: |
+          if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
+            echo "The evaluation-only recovery run did not complete successfully." >&2
+            exit 1
+          fi
+          test -f gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz
+          test -f gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256
