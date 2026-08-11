@@ -1,2 +1,2 @@
-This marker triggers the temporary read-only RunPod API authentication check on the feature branch.
-Attempt 2 records a success marker if the credential is valid.
+This marker triggers the temporary RunPod integration check on the feature branch.
+Attempt 3 runs offline tests, replay smoke, and API authentication.
