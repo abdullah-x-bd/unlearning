@@ -39,6 +39,15 @@ def save_manifest(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
+def tofu_model_overrides(checkpoint: str | Path, attention_implementation: str) -> list[str]:
+    checkpoint_text = str(checkpoint)
+    return [
+        f"model.model_args.pretrained_model_name_or_path={checkpoint_text}",
+        f"model.tokenizer_args.pretrained_model_name_or_path={checkpoint_text}",
+        f"model.model_args.attn_implementation={attention_implementation}",
+    ]
+
+
 def tofu_eval(args: argparse.Namespace) -> None:
     checkout, commit = load_upstream(Path(args.upstreams))
     holdout_split, retain_split = TOFU_SPLITS[args.forget_split]
@@ -60,7 +69,7 @@ def tofu_eval(args: argparse.Namespace) -> None:
             f"holdout_split={holdout_split}",
             f"model={args.model}",
             f"task_name=uas_reference_{args.model}_{retain_split}",
-            f"model.model_args.pretrained_model_name_or_path={retain_model}",
+            *tofu_model_overrides(retain_model, args.attention_implementation),
             f"paths.output_dir={retain_dir.resolve()}",
         ]
         commands.append(command)
@@ -68,6 +77,7 @@ def tofu_eval(args: argparse.Namespace) -> None:
 
     task = args.task_name or f"uas_replay_{args.model}_{args.forget_split}"
     result_dir = Path(args.output_root) / "models" / task
+    checkpoint = Path(args.checkpoint).resolve()
     command = [
         "python",
         "src/eval.py",
@@ -77,7 +87,7 @@ def tofu_eval(args: argparse.Namespace) -> None:
         f"holdout_split={holdout_split}",
         f"model={args.model}",
         f"task_name={task}",
-        f"model.model_args.pretrained_model_name_or_path={Path(args.checkpoint).resolve()}",
+        *tofu_model_overrides(checkpoint, args.attention_implementation),
         f"paths.output_dir={result_dir.resolve()}",
         f"retain_logs_path={retain_log.resolve()}",
     ]
@@ -90,11 +100,13 @@ def tofu_eval(args: argparse.Namespace) -> None:
             "framework_commit": commit,
             "benchmark": "TOFU",
             "model": args.model,
-            "checkpoint": str(Path(args.checkpoint).resolve()),
+            "checkpoint": str(checkpoint),
             "forget_split": args.forget_split,
             "holdout_split": holdout_split,
             "retain_split": retain_split,
             "retain_reference": retain_model,
+            "attention_implementation": args.attention_implementation,
+            "tokenizer_source": "same checkpoint as each evaluated model",
             "commands": commands,
         },
     )
@@ -231,6 +243,12 @@ def main() -> None:
     ev.add_argument("--retain-checkpoint")
     ev.add_argument("--task-name")
     ev.add_argument("--output-root", default="results/openunlearning/tofu")
+    ev.add_argument(
+        "--attention-implementation",
+        choices=["eager", "sdpa", "flash_attention_2"],
+        default="eager",
+        help="Explicit attention backend used uniformly for the retain reference and evaluated checkpoints.",
+    )
     ev.add_argument("--dry-run", action="store_true")
     ev.set_defaults(func=tofu_eval)
 
