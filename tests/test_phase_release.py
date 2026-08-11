@@ -1,6 +1,6 @@
 import torch
 
-from unlearning_at_scale.experiment import _release
+from unlearning_at_scale.lifecycle import release_phase
 
 
 def test_release_invalidates_caller_owned_model_and_optimizer_storage():
@@ -13,7 +13,7 @@ def test_release_invalidates_caller_owned_model_and_optimizer_storage():
     assert optimizer.state
     assert all(parameter.device.type == "cpu" for parameter in model.parameters())
 
-    _release(optimizer, model)
+    release_phase(optimizer, model)
 
     assert not optimizer.state
     assert all(not group["params"] for group in optimizer.param_groups)
