@@ -1,1 +1,1 @@
-Status probe 3 for the guarded TOFU OpenUnlearning evaluation retry after lm-eval and zero-cost torch gate fixes.
+Status probe 4 for the guarded TOFU OpenUnlearning evaluation retry with explicit lm-eval Hugging Face backend validation.
