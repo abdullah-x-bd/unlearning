@@ -4,6 +4,7 @@ base:
   seed: 2026
   strict_determinism: true
   materialize_redacted_store: true
+  release_mode: true
   model:
     device: cuda
     dtype: bf16
@@ -30,8 +31,8 @@ base:
     - {name: late-1pct, strategy: late, fraction: 0.01}
 
 models:
-  - {name: EleutherAI/pythia-160m, revision: main}
-  - {name: EleutherAI/pythia-410m, revision: main}
-  - {name: EleutherAI/pythia-1b, revision: main}
-  - {name: EleutherAI/pythia-1.4b, revision: main}
-  - {name: EleutherAI/pythia-2.8b, revision: main}
+  - {name: EleutherAI/pythia-160m, artifact_key: pythia_160m, revision: step143000}
+  - {name: EleutherAI/pythia-410m, artifact_key: pythia_410m, revision: step143000}
+  - {name: EleutherAI/pythia-1b, artifact_key: pythia_1b, revision: step143000}
+  - {name: EleutherAI/pythia-1.4b, artifact_key: pythia_1_4b, revision: step143000}
+  - {name: EleutherAI/pythia-2.8b, artifact_key: pythia_2_8b, revision: step143000}
