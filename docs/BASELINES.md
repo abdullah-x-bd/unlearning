@@ -1,8 +1,8 @@
-# Approximate baselines and benchmark interoperability
+# Baselines and benchmark interoperability
 
-The exact replay contribution should not be evaluated only against itself. This repository therefore distinguishes three classes of comparison.
+The exact replay contribution is not evaluated only against itself. Comparisons are split into exact counterfactuals, local sanity implementations, and publication-authoritative external baselines.
 
-## 1. Exact counterfactuals
+## Exact counterfactuals
 
 ### Trace-preserving deletion oracle
 
@@ -10,67 +10,44 @@ This is the exact target of the replay mechanism. It starts from a checkpoint be
 
 ### Repacked retain-set retraining
 
-This starts from the same eligible checkpoint but densely repacks retained records. It answers a different question because the execution trajectory changes.
+This starts from the same eligible checkpoint but densely repacks retained records. It answers a different question because the execution trajectory changes. Both are reported.
 
-Both are reported. Neither is silently renamed as the other.
+## Local sanity implementations
 
-## 2. Approximate optimization baselines
+`src/unlearning_at_scale/baselines.py` contains compact implementations of gradient ascent, gradient difference, and NPO. These remain useful for unit tests, objective-level sanity checks, and debugging on the exact same token store.
 
-### Gradient ascent
+**They are not the publication-authoritative baseline implementations.** Paper baseline rows should not be sourced from `scripts/run_approximate_baselines.py` unless explicitly labeled as an internal diagnostic.
 
-Let `NLL_f` be the mean token negative log likelihood on the forget batch. Gradient ascent on the ordinary language-model loss is implemented by minimizing
+The curvature hot path is also a project-specific approximate operational experiment and is never presented as exact deletion.
 
-`L_GA = -NLL_f`.
+## Publication-authoritative baselines
 
-### Gradient difference
+Publication comparisons use the pinned OpenUnlearning checkout at commit:
 
-The retain set is added as an ordinary language-model objective:
+`4ad738aaf60f6a4385f6e2506d01da99e76c31f3`
 
-`L_GradDiff = -NLL_f + lambda * NLL_r`.
+The default TOFU comparison set is:
 
-### Negative preference optimization
+- GradAscent
+- GradDiff
+- NPO
+- SimNPO
 
-For a forget sequence `(x, y)`, NPO uses
+Run them through `scripts/openunlearning_adapter.py tofu-baselines`. The adapter records the upstream commit, target checkpoint, forget split, retain split, methods, and exact commands in a machine-readable manifest.
 
-`L_NPO = -(2 / beta) log sigmoid(-beta * log(p_theta(y|x) / p_ref(y|x)))`.
+A direct table comparing replay with approximate methods must use the same chosen target checkpoint and retain reference. The official OpenUnlearning target/retain models are retained as calibration references, not silently mixed with a differently trained local target.
 
-The implementation precomputes reference sequence NLL values from the original model so a second reference model does not have to remain resident during every NPO update. A retain language-model term is added with an explicit weight.
+## Standardized evaluation
 
-NPO hyperparameters, optimization steps, batch size, and retain weight must be reported. NPO is approximate even when its empirical audits look strong.
+TOFU evaluation is also run through the pinned OpenUnlearning evaluator with `scripts/openunlearning_adapter.py tofu-eval`. The first-class standardized model is Llama 3.2 1B Instruct. The split mapping is `forget01/retain99`, `forget05/retain95`, and `forget10/retain90`.
 
-### Curvature hot path
-
-The diagonal-Fisher anti-update is retained as an explicitly approximate operational experiment. It is not grouped with exact replay in result tables.
-
-## 3. Standard benchmark track
-
-TOFU provides a full synthetic QA training set with official forget01, forget05, forget10 and corresponding retain splits. `scripts/prepare_tofu.py` maps those official splits into the same immutable-ID representation used by the replay system.
-
-The broader LLM-unlearning literature now also has OpenUnlearning, which unifies TOFU, MUSE, WMDP, multiple unlearning algorithms, and a larger set of evaluation metrics. The final paper should use that ecosystem where an apples-to-apples standardized benchmark comparison is useful.
-
-The core replay experiment should remain independently reproducible. External benchmark frameworks should therefore be treated as an interoperability track rather than a hidden dependency of the exactness proof.
+MUSE is the budget-dependent extension and is invoked through the same pinned framework after the Pythia and TOFU studies are complete.
 
 ## Required reporting
 
-For every approximate method report at least:
+For every approximate method report at least the method, implementation source and commit, exact target checkpoint hash, retain reference, hyperparameters, optimization steps, forget and retain metrics, standardized benchmark metrics, wall-clock time, and resulting model hash.
 
-- method and exact objective
-- learning rate
-- optimizer
-- number of steps
-- forget batch size
-- retain batch size
-- retain weight
-- beta when applicable
-- forget loss before and after
-- retain loss before and after
-- held-out utility when available
-- membership metric when available
-- canary extraction metric when applicable
-- wall-clock time
-- resulting model hash
-
-Approximate methods should never be labeled exact because they pass an extraction or membership audit.
+Approximate methods are never labeled exact because they pass an extraction, membership, or benchmark audit.
 
 ## Primary references
 
