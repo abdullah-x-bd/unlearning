@@ -11,7 +11,7 @@ import yaml
 
 from unlearning_at_scale.artifacts import revision_from_lock, verify_lock
 from unlearning_at_scale.dataset import TokenStore
-from unlearning_at_scale.determinism import configure_determinism, environment_snapshot
+from unlearning_at_scale.determinism import configure_determinism, environment_snapshot, resolve_cuda_index
 from unlearning_at_scale.modeling import load_causal_lm
 from unlearning_at_scale.plan import build_plan
 from unlearning_at_scale.training import TraceRunner, create_optimizer
@@ -25,15 +25,6 @@ def tensor_bytes(value) -> int:
     if isinstance(value, (list, tuple)):
         return sum(tensor_bytes(item) for item in value)
     return 0
-
-
-def resolve_cuda_index(device: str | torch.device) -> int:
-    resolved = torch.device(device)
-    if resolved.type != "cuda":
-        raise ValueError(f"expected CUDA device, got {resolved}")
-    if resolved.index is not None:
-        return resolved.index
-    return torch.cuda.current_device()
 
 
 def main() -> None:
