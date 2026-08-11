@@ -1,4 +1,5 @@
 {
+  "graphql_error": "HTTPError: HTTP Error 403: Forbidden",
   "pods": [
     {
       "adjustedCostPerHr": null,
@@ -8,7 +9,8 @@
       "desiredStatus": "RUNNING",
       "gpu": null,
       "id": "tab93e3cgwisfw",
-      "name": "uas-pythia160-31451730675-1"
+      "name": "uas-pythia160-31451730675-1",
+      "runtime": null
     }
   ]
 }
