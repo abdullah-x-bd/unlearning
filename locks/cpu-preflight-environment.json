@@ -1,0 +1,9 @@
+{
+  "datasets": "3.0.1",
+  "huggingface_hub": "0.36.0",
+  "numpy": "2.2.3",
+  "platform": "Linux-6.17.0-1020-azure-x86_64-with-glibc2.39",
+  "python": "3.11.15",
+  "torch": "2.4.1+cu121",
+  "transformers": "4.51.3"
+}
