@@ -1,0 +1,177 @@
+name: RunPod Pythia 2.8B calibration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-pythia-2.8b-calibration-v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runpod-pythia-2.8b-calibration
+  cancel-in-progress: false
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+      MAX_HOURLY_COST: "3.25"
+      MAX_RUNTIME_MINUTES: "45"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify RunPod credential before allocating compute
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          python scripts/runpod_control.py auth-check
+
+      - name: Generate ephemeral SSH key
+        run: |
+          mkdir -p .runpod
+          ssh-keygen -t ed25519 -N '' -f .runpod/id_ed25519
+
+      - name: Allocate one guarded H100 80GB Pod
+        id: pod
+        run: |
+          python scripts/runpod_control.py create \
+            --name "uas-pythia28-cal-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --public-key-file .runpod/id_ed25519.pub \
+            --gpu-types "NVIDIA H100 80GB HBM3" "NVIDIA H100 PCIe" \
+            --max-hourly-cost "$MAX_HOURLY_COST" \
+            --wait-seconds 900 \
+            --output runpod-allocation.json
+          echo "allocated_epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for SSH daemon
+        run: |
+          for attempt in $(seq 1 90); do
+            if ssh \
+              -i .runpod/id_ed25519 \
+              -p "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=5 \
+              "root@${{ steps.pod.outputs.host }}" 'echo ssh-ready'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "SSH did not become ready" >&2
+          exit 1
+
+      - name: Run frozen 2.8B calibration
+        id: calibration
+        continue-on-error: true
+        run: |
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            runpod-allocation.json \
+            "root@${{ steps.pod.outputs.host }}:/workspace/runpod-allocation.json"
+
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            "REPO_SHA='${GITHUB_SHA}' MAX_RUNTIME_MINUTES='${MAX_RUNTIME_MINUTES}' bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+          nohup bash -lc 'sleep 3000; runpodctl pod delete "$RUNPOD_POD_ID"' >/tmp/uas-self-destruct.log 2>&1 &
+          cd /workspace
+          rm -rf unlearning
+          git clone https://github.com/abdullah-x-bd/unlearning.git unlearning
+          cd unlearning
+          git checkout --detach "$REPO_SHA"
+          python -m pip install --upgrade pip
+          python -m pip install --no-cache-dir -e '.[llm,dev]'
+          mkdir -p results
+          cp /workspace/runpod-allocation.json results/runpod-allocation.json
+          exec > >(tee -a results/pythia-2.8b-calibration.log) 2>&1
+          export HF_HUB_DISABLE_TELEMETRY=1
+          export TOKENIZERS_PARALLELISM=false
+          export PYTHONHASHSEED=2026
+          export CUBLAS_WORKSPACE_CONFIG=:4096:8
+          python scripts/gpu_probe.py --output results/gpu-probe-2.8b.json
+          python scripts/bootstrap_upstreams.py
+          python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
+          python scripts/validate_release_data.py
+          python scripts/verify_release_lock.py
+          timeout --signal=TERM --kill-after=120s "${MAX_RUNTIME_MINUTES}m" \
+            python scripts/calibrate_pythia_2_8b.py --updates 50
+          REMOTE
+
+      - name: Collect calibration evidence
+        if: always() && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p gpu-artifacts
+          cp runpod-allocation.json gpu-artifacts/
+          for file in \
+            pythia-2.8b-calibration.json \
+            pythia-2.8b-calibration.log \
+            gpu-probe-2.8b.json; do
+            scp \
+              -i .runpod/id_ed25519 \
+              -P "${{ steps.pod.outputs.port }}" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
+              "gpu-artifacts/$file" || true
+          done
+
+      - name: Terminate RunPod Pod
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
+
+      - name: Record bounded cost estimate
+        if: always() && steps.pod.outputs.pod_id != ''
+        run: |
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          allocation = json.loads(Path("runpod-allocation.json").read_text())
+          elapsed = max(0, time.time() - int("${{ steps.pod.outputs.allocated_epoch }}"))
+          hourly = float(allocation["cost_per_hr"])
+          payload = {
+              "elapsed_seconds_until_cleanup": elapsed,
+              "reported_hourly_gpu_cost": hourly,
+              "estimated_gpu_cost_until_cleanup": hourly * elapsed / 3600.0,
+              "hard_hourly_cap": float(os.environ["MAX_HOURLY_COST"]),
+              "hard_calibration_runtime_minutes": int(os.environ["MAX_RUNTIME_MINUTES"]),
+          }
+          Path("gpu-artifacts/cost-estimate.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload calibration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pythia-2.8b-calibration-evidence
+          path: gpu-artifacts
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 6
+
+      - name: Enforce calibration success
+        if: always()
+        run: |
+          if [[ "${{ steps.calibration.outcome }}" != "success" ]]; then
+            echo "The remote 2.8B calibration did not complete successfully." >&2
+            exit 1
+          fi
