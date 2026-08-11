@@ -20,6 +20,17 @@ class TokenBatch:
     sample_ids: tuple[str, ...]
     retained_count: int
 
+    def to(self, device: str | torch.device) -> "TokenBatch":
+        target = torch.device(device)
+        return TokenBatch(
+            input_ids=self.input_ids.to(target),
+            attention_mask=self.attention_mask.to(target),
+            labels=self.labels.to(target),
+            sample_weights=self.sample_weights.to(target),
+            sample_ids=self.sample_ids,
+            retained_count=self.retained_count,
+        )
+
 
 class TokenStore:
     def __init__(self, directory: str | Path, dummy_token_id: int = 0):
