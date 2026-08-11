@@ -37,6 +37,19 @@ jobs:
       - name: Fetch pinned upstream research repositories
         run: python scripts/bootstrap_upstreams.py
 
+      - name: Exercise pinned OpenUnlearning evaluator imports
+        run: |
+          test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
+          python -m pip install --no-cache-dir -e 'external/open-unlearning[lm-eval]'
+          python - <<'PY'
+          import sys
+          import lm_eval
+          from lm_eval.models.hf_vlms import HFLM
+          sys.path.insert(0, 'external/open-unlearning/src')
+          from evals import get_evaluators
+          print(f'OpenUnlearning import preflight passed; HFLM={HFLM.__name__}; evaluator_factory={get_evaluators.__name__}')
+          PY
+
       - name: Prepare release datasets from resolved Hub commits
         run: python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
 
