@@ -28,4 +28,4 @@ def test_full_runpod_workflow_has_budget_and_cleanup_guards():
     assert 'MAX_RUNTIME_MINUTES: "250"' in workflow
     assert "runpod_control.py delete" in workflow
     assert "sleep 16200" in workflow
-    assert "run_repacked_baseline" not in workflow
+    assert "python scripts/run_release.py configs/pythia-2.8b-scaling.yaml" in workflow
