@@ -1,6 +1,6 @@
 import torch
 
-from scripts.calibrate_pythia_2_8b import resolve_cuda_index
+from unlearning_at_scale.determinism import resolve_cuda_index
 
 
 def test_resolve_cuda_index_uses_explicit_index():
