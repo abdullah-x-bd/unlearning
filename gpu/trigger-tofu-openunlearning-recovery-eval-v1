@@ -1,1 +1,1 @@
-Do not edit manually. Updated only after the evaluation-only recovery workflow passes free gates.
+Evaluation-only retry using preserved canonical checkpoints from artifact 9114652333 after BF16 NumPy interoperability fix. No reconstruction or optimizer updates.
