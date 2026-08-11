@@ -1,9 +1,12 @@
 seed: 2026
 strict_determinism: true
+materialize_redacted_store: true
+release_mode: true
 output_dir: runs/pythia-410m-deletion-geometry
 model:
   name: EleutherAI/pythia-410m
-  revision: main
+  artifact_key: pythia_410m
+  revision: step143000
   device: cuda
   dtype: bf16
   attention_implementation: eager
