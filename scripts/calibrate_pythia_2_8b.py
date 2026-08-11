@@ -27,6 +27,15 @@ def tensor_bytes(value) -> int:
     return 0
 
 
+def resolve_cuda_index(device: str | torch.device) -> int:
+    resolved = torch.device(device)
+    if resolved.type != "cuda":
+        raise ValueError(f"expected CUDA device, got {resolved}")
+    if resolved.index is not None:
+        return resolved.index
+    return torch.cuda.current_device()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Calibrate Pythia 2.8B release memory and throughput")
     parser.add_argument("--config", default="configs/pythia-2.8b-scaling.yaml")
@@ -61,6 +70,7 @@ def main() -> None:
             disable_dropout=bool(model_cfg.get("disable_dropout", False)),
         )
         device = torch.device(model_cfg.get("device", "cuda"))
+        cuda_index = resolve_cuda_index(device)
         model.to(device)
         model_load_seconds = time.perf_counter() - load_started
 
@@ -94,7 +104,7 @@ def main() -> None:
         )
 
         torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.reset_peak_memory_stats(cuda_index)
         runner = TraceRunner(
             model,
             optimizer,
@@ -107,13 +117,13 @@ def main() -> None:
             progress_every=max(1, min(10, args.updates)),
             progress_label="pythia-2.8b-calibration",
         )
-        torch.cuda.synchronize(device)
+        torch.cuda.synchronize(cuda_index)
 
         full_updates = len(store.ids) // examples_per_update
         if len(store.ids) % examples_per_update:
             full_updates += 1
         seconds_per_update = stats.wall_seconds / max(1, stats.applied_updates + stats.skipped_updates)
-        free_bytes, total_bytes = torch.cuda.mem_get_info(device)
+        free_bytes, total_bytes = torch.cuda.mem_get_info(cuda_index)
         dtype_counts: dict[str, int] = {}
         for parameter in model.parameters():
             key = str(parameter.dtype)
@@ -130,13 +140,14 @@ def main() -> None:
             "seconds_per_update": seconds_per_update,
             "full_dataset_updates": full_updates,
             "estimated_seconds_per_full_pass_from_calibration": seconds_per_update * full_updates,
-            "estimated_seconds_for_six_full_pass_equivalents": seconds_per_update * full_updates * 6,
+            "estimated_seconds_for_four_full_pass_equivalents": seconds_per_update * full_updates * 4,
             "model_parameter_count": sum(parameter.numel() for parameter in model.parameters()),
             "model_parameter_bytes": sum(parameter.numel() * parameter.element_size() for parameter in model.parameters()),
             "parameter_dtype_counts": dtype_counts,
             "optimizer_state_tensor_bytes_after_calibration": tensor_bytes(optimizer.state_dict()),
-            "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(device),
-            "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(device),
+            "cuda_device_index": cuda_index,
+            "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(cuda_index),
+            "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(cuda_index),
             "cuda_free_bytes_after_calibration": free_bytes,
             "cuda_total_bytes": total_bytes,
             "environment": environment_snapshot(),
