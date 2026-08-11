@@ -1,0 +1,37 @@
+schema_version: 1
+
+upstreams:
+  open_unlearning:
+    repository: https://github.com/locuslab/open-unlearning.git
+    commit: 4ad738aaf60f6a4385f6e2506d01da99e76c31f3
+    checkout: external/open-unlearning
+  muse_reference:
+    repository: https://github.com/jaechan-repo/muse_bench.git
+    commit: 6d4fdcbdebe4ad46dccaf70f8526cd23ecff609e
+    checkout: external/muse_bench
+  pythia_reference:
+    repository: https://github.com/EleutherAI/pythia.git
+    commit: a19eecb807ec2c79a39ebf18108816e6ffffc1d5
+    checkout: external/pythia
+
+huggingface:
+  pythia_160m: {kind: model, repo_id: EleutherAI/pythia-160m, revision: step143000}
+  pythia_410m: {kind: model, repo_id: EleutherAI/pythia-410m, revision: step143000}
+  pythia_1b: {kind: model, repo_id: EleutherAI/pythia-1b, revision: step143000}
+  pythia_1_4b: {kind: model, repo_id: EleutherAI/pythia-1.4b, revision: step143000}
+  pythia_2_8b: {kind: model, repo_id: EleutherAI/pythia-2.8b, revision: step143000}
+  wikitext: {kind: dataset, repo_id: Salesforce/wikitext, revision: b08601e}
+  tofu: {kind: dataset, repo_id: locuslab/TOFU, revision: 324592d}
+  llama32_1b_instruct: {kind: model, repo_id: meta-llama/Llama-3.2-1B-Instruct, revision: main}
+  tofu_llama32_1b_full_reference: {kind: model, repo_id: open-unlearning/tofu_Llama-3.2-1B-Instruct_full, revision: 88e3120}
+  tofu_llama32_1b_retain90_reference: {kind: model, repo_id: open-unlearning/tofu_Llama-3.2-1B-Instruct_retain90, revision: 7114300c0049527a71833f5683965c358ad9dcbf}
+  tofu_llama32_1b_retain95_reference: {kind: model, repo_id: open-unlearning/tofu_Llama-3.2-1B-Instruct_retain95, revision: f05bc9fd6c8d59decf7599f5e186153081061fd2}
+  tofu_llama32_1b_retain99_reference: {kind: model, repo_id: open-unlearning/tofu_Llama-3.2-1B-Instruct_retain99, revision: 64a2028}
+  muse_news_target: {kind: model, repo_id: muse-bench/MUSE-news_target, revision: a2f3976}
+  muse_books_target: {kind: model, repo_id: muse-bench/MUSE-books_target, revision: main}
+  muse_news_dataset: {kind: dataset, repo_id: muse-bench/MUSE-News, revision: main}
+  muse_books_dataset: {kind: dataset, repo_id: muse-bench/MUSE-Books, revision: main}
+
+prepared_datasets:
+  wikitext_trace: {path: data/prepared/wikitext103-pythia-256}
+  tofu_llama32_trace: {path: data/prepared/tofu-llama32-1b-openunlearning}
