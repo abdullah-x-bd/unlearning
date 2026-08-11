@@ -40,11 +40,15 @@ jobs:
             pyyaml==6.0.2
           python scripts/runpod_control.py auth-check
           python scripts/preflight_tofu_openunlearning.py
+          python -m pip install --disable-pip-version-check --quiet \
+            --index-url https://download.pytorch.org/whl/cpu \
+            'torch==2.4.1'
           python -m pip install --disable-pip-version-check --quiet 'lm-eval==0.4.11'
           python - <<'PY'
+          import torch
           import lm_eval
           from lm_eval.models.hf_vlms import HFLM
-          print(f'zero-cost lm_eval import gate passed; HFLM={HFLM.__name__}')
+          print(f'zero-cost evaluator import gate passed; torch={torch.__version__}; HFLM={HFLM.__name__}')
           PY
 
       - name: Generate ephemeral SSH key and token file
