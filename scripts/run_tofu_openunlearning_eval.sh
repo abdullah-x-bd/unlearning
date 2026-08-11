@@ -117,13 +117,23 @@ print('Canonical state hash gate passed; standardized evaluation may proceed', f
 PY
 
 # Keep reconstruction in the project-pinned runtime. Only after every canonical
-# hash matches do we install the external evaluator and its documented lm-eval extra.
+# hash matches do we install the external evaluator and the HF backend used by it.
 python -m pip install --no-cache-dir -e 'external/open-unlearning[lm-eval]'
+python -m pip install --no-cache-dir 'lm-eval[hf]==0.4.11'
 test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
 python - <<'PY'
+import torch
+import transformers
+import accelerate
+import peft
 import lm_eval
 from lm_eval.models.hf_vlms import HFLM
-print(f'lm_eval import gate passed: {getattr(lm_eval, "__version__", "unknown")}; HFLM={HFLM.__name__}', flush=True)
+print(
+    f'lm_eval HF import gate passed: torch={torch.__version__}; '
+    f'transformers={transformers.__version__}; accelerate={accelerate.__version__}; '
+    f'peft={peft.__version__}; HFLM={HFLM.__name__}',
+    flush=True,
+)
 PY
 
 timeout --signal=TERM --kill-after=120s "${FIRST_EVAL_MINUTES}m" \

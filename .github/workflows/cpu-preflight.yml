@@ -41,13 +41,23 @@ jobs:
         run: |
           test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
           python -m pip install --no-cache-dir -e 'external/open-unlearning[lm-eval]'
+          python -m pip install --no-cache-dir 'lm-eval[hf]==0.4.11'
           python - <<'PY'
           import sys
+          import torch
+          import transformers
+          import accelerate
+          import peft
           import lm_eval
           from lm_eval.models.hf_vlms import HFLM
           sys.path.insert(0, 'external/open-unlearning/src')
           from evals import get_evaluators
-          print(f'OpenUnlearning import preflight passed; HFLM={HFLM.__name__}; evaluator_factory={get_evaluators.__name__}')
+          print(
+              f'OpenUnlearning HF import preflight passed; torch={torch.__version__}; '
+              f'transformers={transformers.__version__}; accelerate={accelerate.__version__}; '
+              f'peft={peft.__version__}; HFLM={HFLM.__name__}; '
+              f'evaluator_factory={get_evaluators.__name__}'
+          )
           PY
 
       - name: Prepare release datasets from resolved Hub commits

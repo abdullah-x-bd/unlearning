@@ -5,6 +5,7 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     workflow = Path(".github/workflows/runpod-tofu-openunlearning-eval.yml").read_text()
     runner = Path("scripts/run_tofu_openunlearning_eval.sh").read_text()
     preflight = Path("scripts/preflight_tofu_openunlearning.py").read_text()
+    cpu_preflight = Path(".github/workflows/cpu-preflight.yml").read_text()
 
     assert 'MAX_HOURLY_COST: "0.70"' in workflow
     assert 'POD_SELF_DESTRUCT_SECONDS: "14400"' in workflow
@@ -14,16 +15,19 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     assert "scripts/run_tofu_openunlearning_eval.sh" in workflow
     assert "scripts/preflight_tofu_openunlearning.py" in workflow
     assert "runpodctl pod delete \\$RUNPOD_POD_ID" in workflow
-    assert "lm-eval==0.4.11" in workflow
-    assert "torch==2.4.1" in workflow
-    assert "https://download.pytorch.org/whl/cpu" in workflow
-    assert "from lm_eval.models.hf_vlms import HFLM" in workflow
     assert "Preserve hash-verified checkpoints after evaluator failure" in workflow
     assert "tofu-openunlearning-recovery.tar" in workflow
     assert "retention-days: 1" in workflow
 
     assert "tofu_llama32_1b_retain90_reference" in preflight
     assert "open-unlearning/tofu_Llama-3.2-1B-Instruct" not in preflight
+    assert "lm-eval[hf]==0.4.11" in preflight
+    assert "torch==2.4.1" in preflight
+    assert "https://download.pytorch.org/whl/cpu" in preflight
+    assert "import transformers" in preflight
+    assert "import accelerate" in preflight
+    assert "import peft" in preflight
+    assert "from lm_eval.models.hf_vlms import HFLM" in preflight
 
     assert 'RECONSTRUCTION_MINUTES="${RECONSTRUCTION_MINUTES:-90}"' in runner
     assert 'FIRST_EVAL_MINUTES="${FIRST_EVAL_MINUTES:-75}"' in runner
@@ -31,10 +35,17 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     assert runner.count("openunlearning_adapter.py tofu-eval") == 2
     assert runner.count("--attention-implementation eager") == 2
     assert "external/open-unlearning[lm-eval]" in runner
+    assert "lm-eval[hf]==0.4.11" in runner
+    assert "import transformers" in runner
+    assert "import accelerate" in runner
+    assert "import peft" in runner
     assert "from lm_eval.models.hf_vlms import HFLM" in runner
     assert "tofu-baselines" not in runner
     assert "src/train.py" not in runner
     assert "Canonical state hash gate passed" in runner
+
+    assert "lm-eval[hf]==0.4.11" in cpu_preflight
+    assert "from lm_eval.models.hf_vlms import HFLM" in cpu_preflight
 
 
 def test_openunlearning_adapter_pins_retain_snapshot_and_eager_backend():

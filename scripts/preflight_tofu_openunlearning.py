@@ -21,6 +21,52 @@ EXPECTED = {
 }
 
 
+def exercise_github_evaluator_imports() -> None:
+    if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
+        return
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--quiet",
+            "--index-url",
+            "https://download.pytorch.org/whl/cpu",
+            "torch==2.4.1",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--quiet",
+            "lm-eval[hf]==0.4.11",
+        ],
+        check=True,
+    )
+
+    import accelerate
+    import lm_eval
+    import peft
+    import torch
+    import transformers
+    from lm_eval.models.hf_vlms import HFLM
+
+    print(
+        "TOFU OpenUnlearning HF backend import gate passed: "
+        f"torch={torch.__version__}; transformers={transformers.__version__}; "
+        f"accelerate={accelerate.__version__}; peft={peft.__version__}; "
+        f"HFLM={HFLM.__name__}; lm_eval={getattr(lm_eval, '__version__', 'unknown')}"
+    )
+
+
 def main() -> None:
     frozen = json.loads((RELEASE_DIR / "frozen-hashes.json").read_text())
     for key, value in EXPECTED.items():
@@ -86,6 +132,7 @@ def main() -> None:
         ],
         check=True,
     )
+    exercise_github_evaluator_imports()
     print("TOFU OpenUnlearning zero-cost preflight passed")
 
 
