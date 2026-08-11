@@ -1,0 +1,95 @@
+name: TOFU Llama 1B access preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - gpu/trigger-tofu-llama1b-access-preflight-v1
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      HF_TOKEN_PRIMARY: ${{ secrets.HF_TOKEN }}
+      HF_TOKEN_ALT: ${{ secrets.HUGGINGFACE_HUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install preflight dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --quiet \
+            huggingface_hub==0.36.0 \
+            pyyaml==6.0.2
+
+      - name: Verify focused four-pass TOFU configuration
+        run: |
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+
+          cfg = yaml.safe_load(Path('configs/benchmarks/tofu-llama32-1b-forget10.yaml').read_text())
+          assert cfg['model']['artifact_key'] == 'llama32_1b_instruct'
+          assert cfg['model']['dtype'] == 'bf16'
+          assert cfg['plan']['microbatch_size'] == 8
+          assert cfg['plan']['grad_accum_steps'] == 4
+          assert cfg['plan']['epochs'] == 5
+          assert cfg['checkpoint_every'] == 0
+          assert cfg['replay_policies'] == ['slot_mask']
+          assert cfg['run_repacked_baseline'] is False
+          assert len(cfg['forget_scenarios']) == 1
+          scenario = cfg['forget_scenarios'][0]
+          assert scenario['name'] == 'tofu-forget10'
+          assert scenario['strategy'] == 'id_file'
+          assert scenario['path'].endswith('forget10_ids.txt')
+          print('Focused TOFU forget10 four-pass configuration verified')
+          PY
+
+      - name: Verify access to exact frozen Llama revision
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from huggingface_hub import hf_hub_download
+
+          token = (os.environ.get('HF_TOKEN_PRIMARY') or os.environ.get('HF_TOKEN_ALT') or '').strip()
+          if not token:
+              raise RuntimeError(
+                  'No Hugging Face token is configured. Add a repository secret named HF_TOKEN '
+                  'with access to meta-llama/Llama-3.2-1B-Instruct.'
+              )
+          lock = json.loads(Path('locks/artifacts.lock.json').read_text())
+          item = lock['huggingface']['llama32_1b_instruct']
+          resolved = item['resolved_sha']
+          if len(resolved) != 40:
+              raise RuntimeError('Llama artifact is not pinned to a full commit SHA')
+          path = hf_hub_download(
+              repo_id=item['repo_id'],
+              filename='config.json',
+              revision=resolved,
+              token=token,
+          )
+          print(f"Access verified for {item['repo_id']}@{resolved}; config={path}")
+          PY
+
+      - name: Verify pinned OpenUnlearning adapter commands
+        run: |
+          python scripts/bootstrap_upstreams.py
+          python scripts/openunlearning_adapter.py tofu-eval \
+            --checkpoint /tmp/uas-placeholder-checkpoint \
+            --forget-split forget10 \
+            --dry-run
+
+      - name: Record preflight decision
+        run: |
+          echo 'TOFU Llama 1B access and focused release preflight passed.'
+          echo 'No GPU compute was allocated by this workflow.'
