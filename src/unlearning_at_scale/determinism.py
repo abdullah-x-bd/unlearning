@@ -43,6 +43,15 @@ def seed_microbatch(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def resolve_cuda_index(device: str | torch.device) -> int:
+    resolved = torch.device(device)
+    if resolved.type != "cuda":
+        raise ValueError(f"expected CUDA device, got {resolved}")
+    if resolved.index is not None:
+        return resolved.index
+    return torch.cuda.current_device()
+
+
 def environment_snapshot() -> dict[str, Any]:
     cuda_version = torch.version.cuda
     cudnn_version = torch.backends.cudnn.version() if torch.backends.cudnn.is_available() else None
