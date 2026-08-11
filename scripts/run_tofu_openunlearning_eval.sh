@@ -118,7 +118,14 @@ PY
 
 # Keep the canonical two-pass reconstruction in the project-pinned runtime.
 # Only after its hashes match do we install the pinned external evaluator.
-python -m pip install --no-cache-dir -e external/open-unlearning
+# OpenUnlearning imports lm_eval unconditionally from its evaluator registry, so
+# the pinned lm-eval extra is required even for TOFU-only evaluation.
+python -m pip install --no-cache-dir -e 'external/open-unlearning[lm-eval]'
+python - <<'PY'
+import lm_eval
+from evals import get_evaluators
+print('Pinned OpenUnlearning runtime import gate passed', flush=True)
+PY
 test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
 
 timeout --signal=TERM --kill-after=120s "${FIRST_EVAL_MINUTES}m" \
