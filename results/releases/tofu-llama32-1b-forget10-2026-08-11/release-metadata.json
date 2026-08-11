@@ -1,0 +1,26 @@
+{
+  "experiment_head_sha": "c2375c1e491224062c05de6a3abe1b50f4af3937",
+  "github_actions_artifact": {
+    "digest": "sha256:6a1381c76bec90233d5e4d1dde3fc43362405ed6bbd6d4378f709cdbf3634d8d",
+    "id": 9104982056,
+    "name": "tofu-llama1b-full-evidence",
+    "retention_expires_at": "2026-10-10T14:20:01Z",
+    "size_bytes": 710093
+  },
+  "internal_evidence_tar": {
+    "name": "tofu-llama1b-full-evidence.tar.gz",
+    "sha256": "ac2fc36426c2b1fc91286c370956d48f061603ea1922ecabeda5f86faf832470"
+  },
+  "release_name": "tofu-llama32-1b-forget10-2026-08-11",
+  "runpod": {
+    "cloud_type": "SECURE",
+    "elapsed_seconds_until_cleanup": 7192.5770943164825,
+    "estimated_gpu_cost_until_cleanup_usd": 1.0589071833299266,
+    "gpu": "NVIDIA RTX A6000",
+    "pod_id": "83ai91i4pezzrv",
+    "reported_hourly_gpu_cost_usd": 0.53,
+    "terminated_cleanly": true
+  },
+  "workflow_job_id": 93776077366,
+  "workflow_run_id": 31490644488
+}
