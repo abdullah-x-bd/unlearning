@@ -1,1 +1,1 @@
-One-shot trigger for the guarded Pythia 2.8B four-pass full scaling experiment after PR #8 passed CI and CPU publication preflight.
+Attempt 2 trigger for the guarded Pythia 2.8B four-pass full scaling experiment after bootstrapping PyYAML in the GitHub-side config guard.
