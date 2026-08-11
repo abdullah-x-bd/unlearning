@@ -25,6 +25,10 @@ def exercise_github_evaluator_imports() -> None:
     if os.environ.get("GITHUB_ACTIONS", "").lower() != "true":
         return
 
+    # Mirror the paid evaluator install order without allocating a GPU:
+    # first satisfy the pinned OpenUnlearning runtime (using CPU torch), then
+    # add lm-eval's Hugging Face backend. The strict upstream requirements keep
+    # broad lm-eval extras from floating transformers/Hub/accelerate versions.
     subprocess.run(
         [
             sys.executable,
@@ -47,23 +51,56 @@ def exercise_github_evaluator_imports() -> None:
             "install",
             "--disable-pip-version-check",
             "--quiet",
+            "-e",
+            "external/open-unlearning[lm-eval]",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--quiet",
             "lm-eval[hf]==0.4.11",
         ],
         check=True,
     )
 
     import accelerate
+    import huggingface_hub
     import lm_eval
     import peft
     import torch
     import transformers
     from lm_eval.models.hf_vlms import HFLM
 
+    expected_versions = {
+        "torch": "2.4.1",
+        "transformers": "4.51.3",
+        "accelerate": "0.34.2",
+        "huggingface_hub": "0.36.0",
+    }
+    observed_versions = {
+        "torch": torch.__version__.split("+")[0],
+        "transformers": transformers.__version__,
+        "accelerate": accelerate.__version__,
+        "huggingface_hub": huggingface_hub.__version__,
+    }
+    if observed_versions != expected_versions:
+        raise RuntimeError(
+            f"OpenUnlearning dependency drift before paid allocation: "
+            f"{observed_versions} != {expected_versions}"
+        )
+
     print(
         "TOFU OpenUnlearning HF backend import gate passed: "
         f"torch={torch.__version__}; transformers={transformers.__version__}; "
-        f"accelerate={accelerate.__version__}; peft={peft.__version__}; "
-        f"HFLM={HFLM.__name__}; lm_eval={getattr(lm_eval, '__version__', 'unknown')}"
+        f"accelerate={accelerate.__version__}; hub={huggingface_hub.__version__}; "
+        f"peft={peft.__version__}; HFLM={HFLM.__name__}; "
+        f"lm_eval={getattr(lm_eval, '__version__', 'unknown')}"
     )
 
 
