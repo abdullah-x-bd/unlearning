@@ -1,0 +1,30 @@
+{
+  "cublas_workspace_config": ":4096:8",
+  "cuda": "12.4",
+  "cuda_available": true,
+  "cudnn": 90100,
+  "deterministic_algorithms": true,
+  "devices": [
+    {
+      "capability": [
+        8,
+        6
+      ],
+      "index": 0,
+      "name": "NVIDIA RTX A6000",
+      "total_memory": 51033931776
+    }
+  ],
+  "git_commit": "c2375c1e491224062c05de6a3abe1b50f4af3937",
+  "packages": {
+    "PyYAML": "6.0.2",
+    "datasets": "3.0.1",
+    "numpy": "2.2.3",
+    "peft": null,
+    "torch": "2.4.1+cu124",
+    "transformers": "4.51.3"
+  },
+  "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.35",
+  "python": "3.11.10 (main, Sep  7 2024, 18:35:41) [GCC 11.4.0]",
+  "torch": "2.4.1+cu124"
+}
