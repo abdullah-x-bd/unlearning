@@ -54,6 +54,24 @@ def create_optimizer(
     )
 
 
+def _format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _gpu_memory_text(device: torch.device) -> str:
+    if device.type != "cuda" or not torch.cuda.is_available():
+        return ""
+    allocated = torch.cuda.memory_allocated(device) / (1024 ** 3)
+    reserved = torch.cuda.memory_reserved(device) / (1024 ** 3)
+    peak = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+    return f" | gpu {allocated:.2f}G alloc {reserved:.2f}G reserved {peak:.2f}G peak"
+
+
 class TraceRunner:
     def __init__(
         self,
@@ -81,6 +99,8 @@ class TraceRunner:
         start_optimizer_step: int = 0,
         checkpoint_every: int | None = None,
         checkpoint_dir: str | Path | None = None,
+        progress_every: int | None = 50,
+        progress_label: str | None = None,
     ) -> RunStats:
         self.model.train()
         self.optimizer.zero_grad(set_to_none=True)
@@ -94,7 +114,24 @@ class TraceRunner:
         retained_tokens = 0
         summed_loss = 0.0
 
-        for spec in plan:
+        plan_items = list(plan)
+        total_updates = len(
+            {
+                spec.optimizer_step
+                for spec in plan_items
+                if spec.optimizer_step >= start_optimizer_step
+            }
+        )
+        completed_updates = 0
+        label = progress_label or policy
+        if progress_every and total_updates:
+            print(
+                f"[{label}] starting {total_updates} optimizer updates from logical step "
+                f"{start_optimizer_step}",
+                flush=True,
+            )
+
+        for spec in plan_items:
             if spec.optimizer_step < start_optimizer_step:
                 continue
             logical_steps_seen.add(spec.optimizer_step)
@@ -123,6 +160,7 @@ class TraceRunner:
                     skipped_updates += 1
                 self.optimizer.zero_grad(set_to_none=True)
                 segment_has_data = False
+                completed_updates += 1
 
                 next_step = spec.optimizer_step + 1
                 if (
@@ -135,6 +173,24 @@ class TraceRunner:
                         self.model,
                         self.optimizer,
                         next_optimizer_step=next_step,
+                    )
+
+                if progress_every and (
+                    completed_updates % progress_every == 0
+                    or completed_updates == total_updates
+                ):
+                    elapsed = time.perf_counter() - start
+                    rate = completed_updates / elapsed if elapsed > 0 else 0.0
+                    remaining = max(0, total_updates - completed_updates)
+                    eta = remaining / rate if rate > 0 else 0.0
+                    percent = 100.0 * completed_updates / total_updates
+                    mean_token_loss = summed_loss / retained_tokens if retained_tokens else 0.0
+                    print(
+                        f"[{label}] update {completed_updates}/{total_updates} "
+                        f"({percent:.1f}%) | elapsed {_format_duration(elapsed)} "
+                        f"| eta {_format_duration(eta)} | mean token loss {mean_token_loss:.6f}"
+                        f"{_gpu_memory_text(self.device)}",
+                        flush=True,
                     )
 
         return RunStats(
