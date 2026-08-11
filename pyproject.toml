@@ -4,14 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unlearning-at-scale"
-version = "0.3.0"
+version = "0.3.1"
 description = "Experimental artifact for deterministic training replay and LLM data deletion"
-requires-python = ">=3.10"
-dependencies = ["numpy>=1.26", "pyyaml>=6.0", "torch>=2.2"]
+requires-python = ">=3.10,<3.12"
+dependencies = [
+  "numpy==2.2.3",
+  "pyyaml==6.0.2",
+  "torch==2.4.1",
+]
 
 [project.optional-dependencies]
-llm = ["transformers>=4.52", "datasets>=3.0", "peft>=0.15", "accelerate>=1.0", "huggingface_hub>=0.30"]
-dev = ["pytest>=8.0", "ruff>=0.8"]
+llm = [
+  "transformers==4.51.3",
+  "datasets==3.0.1",
+  "accelerate==0.34.2",
+  "huggingface_hub==0.36.0",
+]
+lora = ["peft==0.15.2"]
+dev = ["pytest>=8.0,<10", "ruff>=0.8,<1"]
 
 [project.scripts]
 uas = "unlearning_at_scale.cli:main"

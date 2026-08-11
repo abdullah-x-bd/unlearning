@@ -1,0 +1,88 @@
+name: CPU publication preflight
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project with LLM and development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[llm,dev]'
+
+      - name: Run regression suite
+        run: pytest -q
+
+      - name: Run dependency-light replay smoke test
+        run: python -m unlearning_at_scale.cli core-smoke --output runs/cpu-preflight-smoke
+
+      - name: Fetch pinned upstream research repositories
+        run: python scripts/bootstrap_upstreams.py
+
+      - name: Prepare release datasets from resolved Hub commits
+        run: python scripts/prepare_release_data.py --clean --wikitext-max-records 20000
+
+      - name: Validate prepared research data
+        run: python scripts/validate_release_data.py
+
+      - name: Freeze all model, dataset and upstream revisions
+        run: python scripts/freeze_artifacts.py
+
+      - name: Verify frozen artifact lock
+        run: python scripts/verify_release_lock.py
+
+      - name: Record package environment
+        run: |
+          python -m pip freeze > results/cpu-preflight-pip-freeze.txt
+          python - <<'PY'
+          import json, platform, sys
+          from pathlib import Path
+          import numpy, torch
+          import datasets, huggingface_hub, transformers
+          payload = {
+              "python": sys.version,
+              "platform": platform.platform(),
+              "numpy": numpy.__version__,
+              "torch": torch.__version__,
+              "datasets": datasets.__version__,
+              "huggingface_hub": huggingface_hub.__version__,
+              "transformers": transformers.__version__,
+          }
+          Path("results/cpu-preflight-environment.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload frozen CPU preflight bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu-preflight-release-bundle
+          path: |
+            data/prepared/wikitext103-pythia-256
+            data/prepared/tofu-llama32-1b-openunlearning
+            locks/artifacts.lock.json
+            locks/preparation-resolved.json
+            results/cpu-preflight-validation.json
+            results/cpu-preflight-environment.json
+            results/cpu-preflight-pip-freeze.txt
+            runs/cpu-preflight-smoke
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6

@@ -1,0 +1,59 @@
+{
+  "huggingface": {
+    "llama32_1b_instruct": {"kind": "model", "repo_id": "meta-llama/Llama-3.2-1B-Instruct", "requested_revision": "main", "resolved_sha": "9213176726f574b556790deb65791e0c5aa438b6"},
+    "muse_books_dataset": {"kind": "dataset", "repo_id": "muse-bench/MUSE-Books", "requested_revision": "main", "resolved_sha": "051ba90319e920d410d87cfdbd61f25843c1b892"},
+    "muse_books_target": {"kind": "model", "repo_id": "muse-bench/MUSE-books_target", "requested_revision": "main", "resolved_sha": "c8dd3fb23a726762ec66d277933c7cff6767f3c2"},
+    "muse_news_dataset": {"kind": "dataset", "repo_id": "muse-bench/MUSE-News", "requested_revision": "main", "resolved_sha": "506bd5b150b92814d45e4404a82f120ab2d748bf"},
+    "muse_news_target": {"kind": "model", "repo_id": "muse-bench/MUSE-news_target", "requested_revision": "a2f3976", "resolved_sha": "a2f39769e9a0b98ec1cdd12f65e9962502208935"},
+    "pythia_160m": {"kind": "model", "repo_id": "EleutherAI/pythia-160m", "requested_revision": "step143000", "resolved_sha": "b56d9bee36300031aeea723b73c4d62ac7fa71a2"},
+    "pythia_1_4b": {"kind": "model", "repo_id": "EleutherAI/pythia-1.4b", "requested_revision": "step143000", "resolved_sha": "9cc5c8c8148a4e0115d9e29c6b4f21124cfe748a"},
+    "pythia_1b": {"kind": "model", "repo_id": "EleutherAI/pythia-1b", "requested_revision": "step143000", "resolved_sha": "c0fea4b917615c60370c0aeb76877f18fef30ab3"},
+    "pythia_2_8b": {"kind": "model", "repo_id": "EleutherAI/pythia-2.8b", "requested_revision": "step143000", "resolved_sha": "dbe7ae300a54abcdc475a33907b3dff81d25709f"},
+    "pythia_410m": {"kind": "model", "repo_id": "EleutherAI/pythia-410m", "requested_revision": "step143000", "resolved_sha": "bba6a464f54bbf08fc174cfb351d9794d58af21d"},
+    "tofu": {"kind": "dataset", "repo_id": "locuslab/TOFU", "requested_revision": "324592d", "resolved_sha": "324592d84ae4f482ac7249b9285c2ecdb53e3a68"},
+    "tofu_llama32_1b_full_reference": {"kind": "model", "repo_id": "open-unlearning/tofu_Llama-3.2-1B-Instruct_full", "requested_revision": "88e3120", "resolved_sha": "88e31200b97e4c0c04ae0d2f0b591f427046d192"},
+    "tofu_llama32_1b_retain90_reference": {"kind": "model", "repo_id": "open-unlearning/tofu_Llama-3.2-1B-Instruct_retain90", "requested_revision": "7114300c0049527a71833f5683965c358ad9dcbf", "resolved_sha": "7114300c0049527a71833f5683965c358ad9dcbf"},
+    "tofu_llama32_1b_retain95_reference": {"kind": "model", "repo_id": "open-unlearning/tofu_Llama-3.2-1B-Instruct_retain95", "requested_revision": "f05bc9fd6c8d59decf7599f5e186153081061fd2", "resolved_sha": "f05bc9fd6c8d59decf7599f5e186153081061fd2"},
+    "tofu_llama32_1b_retain99_reference": {"kind": "model", "repo_id": "open-unlearning/tofu_Llama-3.2-1B-Instruct_retain99", "requested_revision": "64a2028", "resolved_sha": "64a2028a51b386a06898464142df1d89749fdab3"},
+    "wikitext": {"kind": "dataset", "repo_id": "Salesforce/wikitext", "requested_revision": "b08601e", "resolved_sha": "b08601e04326c79dfdd32d625aee71d232d685c3"}
+  },
+  "prepared_datasets": {
+    "tofu_llama32_trace": {
+      "directory_sha256": "e1704f7f7073b892fe57ff423455f842b78e60ff03a4ee007505f6880f79360c",
+      "files": {
+        "attention_mask.npy": "f15ec1b7d98528249398b0f566e94fbc1f3d6349a6dff0cc45277b7dd5094264",
+        "dataset_manifest.json": "970cbe124dfc3ba50a14bb4daad9958b381b8deba7ae55e84abbb2a92ab0917f",
+        "forget01_ids.txt": "8f32ccf705cc70e4a8fb6a930017fafb50c23634c1c5588f797ad9f7de6eaefd",
+        "forget05_ids.txt": "30200b907ce20d5292fe3dafa793b8fd6c5ab6dd7c2cbefa9843474e07de78b6",
+        "forget10_ids.txt": "dc1f259e1c930087b81fc2c82ac38345a6ff1097760137bbb366a4f62230dc3d",
+        "ids.json": "1bb6ad39693aaebeb57a5146c901f9a80df1cd41e01fb1e605e66470d297da9c",
+        "input_ids.npy": "b4574993f869b5fa4a2681792a141241ba55e46318f3755689acf71004a37f34",
+        "labels.npy": "4ecccccb52d89b4ba9db4956f3111a1905c587297c47038f2e521e604a28f9a3",
+        "records_meta.jsonl": "bfdc8259a54f45b0c2ff478084af56205b3ebbb18ea71860ad6e5d178c94bedf",
+        "retain90_ids.txt": "0367773c66a6041438fb2cfd5fd1255a78604a4a1995fd2b2158b15ad3c71e4e",
+        "retain95_ids.txt": "511b9745962622677ba0cdc7d1520ed94d60c65846af7a6a62038c5d87949df1",
+        "retain99_ids.txt": "2f1129197db79b6b84d07036e58aa32f5c7d796bcc9f3d73685590776de08d4d"
+      },
+      "path": "data/prepared/tofu-llama32-1b-openunlearning"
+    },
+    "wikitext_trace": {
+      "directory_sha256": "e423aa197acf0f38b374e8829b823673cb97d53170cfb3af8a97b3e858f0d47d",
+      "files": {
+        "attention_mask.npy": "6c0740caa5b22e11aad398812e0d74a12e35ff848cf8f33d4f506314d3b86786",
+        "canaries.json": "6889b32998e7736f0f518860339de7f4f6f409b6176f2b66b0b4d8da5548ef56",
+        "dataset_manifest.json": "fe50072832f08328bd0fc0674ddb1038f8308b4a395dcdac5b34db6ddeffc638",
+        "ids.json": "24b2eb62e6c7c6794bc37ae360d6df2cc7946e1655f22058d27dc40ae1955db4",
+        "input_ids.npy": "f8b762781f80922b380e3b23b01fd341fa99338754b841153c06d9eec6081fe5",
+        "records_meta.jsonl": "7352b195cd317ce3f31e292fb15cf1e9828bb860c16bad69e095e21e331bf38a"
+      },
+      "path": "data/prepared/wikitext103-pythia-256"
+    }
+  },
+  "schema_version": 1,
+  "source_manifest_sha256": "5ceb96c19ed54b5fe3770af62de18f9bd326707e67cd88e74328c24cb04fe059",
+  "upstreams": {
+    "muse_reference": {"checkout": "external/muse_bench", "commit": "6d4fdcbdebe4ad46dccaf70f8526cd23ecff609e", "repository": "https://github.com/jaechan-repo/muse_bench.git"},
+    "open_unlearning": {"checkout": "external/open-unlearning", "commit": "4ad738aaf60f6a4385f6e2506d01da99e76c31f3", "repository": "https://github.com/locuslab/open-unlearning.git"},
+    "pythia_reference": {"checkout": "external/pythia", "commit": "a19eecb807ec2c79a39ebf18108816e6ffffc1d5", "repository": "https://github.com/EleutherAI/pythia.git"}
+  }
+}

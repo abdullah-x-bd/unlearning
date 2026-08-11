@@ -1,0 +1,16 @@
+{
+  "tofu": {
+    "records": 4000,
+    "shape": [4000, 512],
+    "split_counts": {"forget01": 40, "forget05": 200, "forget10": 400, "retain90": 3600, "retain95": 3800, "retain99": 3960},
+    "target_tokens_max": 92,
+    "target_tokens_mean": 34.82625,
+    "target_tokens_min": 7
+  },
+  "wikitext": {
+    "canary_records": 256,
+    "records": 20256,
+    "sequence_length": 256,
+    "source_records": 20000
+  }
+}
