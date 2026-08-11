@@ -1,0 +1,59 @@
+name: Temporary patch Pythia 2.8B phase release
+
+on:
+  push:
+    branches: [fix-pythia28-phase-release]
+    paths:
+      - gpu/trigger-patch-pythia28-release-v1
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix-pythia28-phase-release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Patch phase release and full GPU guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          experiment_path = Path('src/unlearning_at_scale/experiment.py')
+          text = experiment_path.read_text()
+          old = '''def _release(*objects) -> None:\n    for obj in objects:\n        del obj\n    gc.collect()\n    if torch.cuda.is_available():\n        torch.cuda.empty_cache()\n'''
+          new = '''def _release(*objects) -> None:\n    for obj in objects:\n        if isinstance(obj, torch.optim.Optimizer):\n            obj.state.clear()\n            for group in obj.param_groups:\n                group["params"].clear()\n        elif isinstance(obj, torch.nn.Module):\n            obj.zero_grad(set_to_none=True)\n            obj.to_empty(device=torch.device("meta"))\n    gc.collect()\n    if torch.cuda.is_available():\n        torch.cuda.empty_cache()\n'''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one legacy _release helper')
+          experiment_path.write_text(text.replace(old, new))
+
+          workflow_path = Path('.github/workflows/runpod-pythia-2.8b-full.yml')
+          workflow = workflow_path.read_text()
+          old_guard = '''          python scripts/validate_release_data.py\n          python scripts/verify_release_lock.py\n          timeout --signal=TERM --kill-after=180s "${MAX_RUNTIME_MINUTES}m" \\\n            python scripts/run_release.py configs/pythia-2.8b-scaling.yaml\n'''
+          new_guard = '''          python scripts/validate_release_data.py\n          python scripts/verify_release_lock.py\n          python scripts/gpu_phase_release_smoke.py\n          timeout --signal=TERM --kill-after=180s "${MAX_RUNTIME_MINUTES}m" \\\n            python scripts/run_release.py configs/pythia-2.8b-scaling.yaml\n'''
+          if workflow.count(old_guard) != 1:
+              raise SystemExit('expected exactly one full-run release guard block')
+          workflow = workflow.replace(old_guard, new_guard)
+          old_name = '''              'gpu-probe-2.8b-full.json',\n              'disk-before.txt',\n'''
+          new_name = '''              'gpu-probe-2.8b-full.json',\n              'gpu-phase-release-smoke.json',\n              'disk-before.txt',\n'''
+          if workflow.count(old_name) != 1:
+              raise SystemExit('expected exactly one evidence name insertion point')
+          workflow_path.write_text(workflow.replace(old_name, new_name))
+          PY
+      - name: Run zero-cost regression suite
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+          pytest -q tests/test_phase_release.py tests/test_state_scalar.py tests/test_label_masks.py
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/unlearning_at_scale/experiment.py .github/workflows/runpod-pythia-2.8b-full.yml
+          git commit -m 'Fix phase GPU release before replay'
+          git push origin HEAD:fix-pythia28-phase-release
