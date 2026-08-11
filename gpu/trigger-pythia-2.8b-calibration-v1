@@ -1,1 +1,1 @@
-Attempt 2 trigger for guarded Pythia 2.8B calibration with H100-first 80GB+ fallback capacity.
+Attempt 3 trigger for guarded Pythia 2.8B calibration after CUDA device-index fix and hardened evidence collection.
