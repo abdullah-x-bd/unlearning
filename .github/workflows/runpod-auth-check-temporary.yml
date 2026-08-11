@@ -1,0 +1,25 @@
+name: Temporary RunPod auth check
+
+on:
+  push:
+    branches: [runpod-first-gpu]
+    paths:
+      - gpu/trigger-runpod-auth-check-v1
+
+permissions:
+  contents: read
+
+jobs:
+  auth:
+    runs-on: ubuntu-24.04
+    env:
+      RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify secret and read-only API access
+        run: |
+          test -n "$RUNPOD_API_KEY"
+          python scripts/runpod_control.py auth-check
