@@ -7,7 +7,7 @@ on:
       - gpu/trigger-runpod-auth-check-v1
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   auth:
@@ -16,6 +16,8 @@ jobs:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: runpod-first-gpu
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -23,3 +25,12 @@ jobs:
         run: |
           test -n "$RUNPOD_API_KEY"
           python scripts/runpod_control.py auth-check
+      - name: Persist success marker
+        run: |
+          mkdir -p gpu
+          printf 'RunPod API authentication passed in GitHub Actions.\n' > gpu/runpod-auth-passed-v1
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add gpu/runpod-auth-passed-v1
+          git commit -m 'Record successful RunPod API auth check'
+          git push origin HEAD:runpod-first-gpu
