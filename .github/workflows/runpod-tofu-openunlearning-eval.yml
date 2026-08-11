@@ -40,6 +40,12 @@ jobs:
             pyyaml==6.0.2
           python scripts/runpod_control.py auth-check
           python scripts/preflight_tofu_openunlearning.py
+          python -m pip install --disable-pip-version-check --quiet 'lm-eval==0.4.11'
+          python - <<'PY'
+          import lm_eval
+          from lm_eval.models.hf_vlms import HFLM
+          print(f'zero-cost lm_eval import gate passed; HFLM={HFLM.__name__}')
+          PY
 
       - name: Generate ephemeral SSH key and token file
         run: |
@@ -146,6 +152,45 @@ jobs:
               "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
               "gpu-artifacts/$file" || true
           done
+
+      - name: Preserve hash-verified checkpoints after evaluator failure
+        if: always() && steps.remote.outcome != 'success' && steps.pod.outputs.pod_id != ''
+        continue-on-error: true
+        run: |
+          mkdir -p recovery-checkpoints
+          ssh \
+            -i .runpod/id_ed25519 \
+            -p "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "root@${{ steps.pod.outputs.host }}" \
+            'cd /workspace/unlearning && \
+             python -c "import json; s=json.load(open(\"runs/tofu-openunlearning-reconstruction/summary.json\")); assert s.get(\"status\")==\"passed\"" && \
+             tar -cf /workspace/tofu-openunlearning-recovery.tar \
+               runs/tofu-openunlearning-reconstruction/hf/original \
+               runs/tofu-openunlearning-reconstruction/hf/deletion \
+               runs/tofu-openunlearning-reconstruction/summary.json'
+          scp \
+            -i .runpod/id_ed25519 \
+            -P "${{ steps.pod.outputs.port }}" \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ConnectTimeout=20 \
+            -o ConnectionAttempts=2 \
+            "root@${{ steps.pod.outputs.host }}:/workspace/tofu-openunlearning-recovery.tar" \
+            recovery-checkpoints/tofu-openunlearning-recovery.tar || true
+
+      - name: Upload temporary recovery checkpoints
+        if: always() && steps.remote.outcome != 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-openunlearning-recovery-checkpoints
+          path: recovery-checkpoints/tofu-openunlearning-recovery.tar
+          if-no-files-found: ignore
+          retention-days: 1
+          compression-level: 0
 
       - name: Terminate RunPod Pod
         if: always() && steps.pod.outputs.pod_id != ''

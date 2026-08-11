@@ -116,10 +116,15 @@ assert rebuilt['forget_ids_sha256'] == frozen['forget_ids_sha256']
 print('Canonical state hash gate passed; standardized evaluation may proceed', flush=True)
 PY
 
-# Keep the canonical two-pass reconstruction in the project-pinned runtime.
-# Only after its hashes match do we install the pinned external evaluator.
-python -m pip install --no-cache-dir -e external/open-unlearning
+# Keep reconstruction in the project-pinned runtime. Only after every canonical
+# hash matches do we install the external evaluator and its documented lm-eval extra.
+python -m pip install --no-cache-dir -e 'external/open-unlearning[lm-eval]'
 test "$(git -C external/open-unlearning rev-parse HEAD)" = "4ad738aaf60f6a4385f6e2506d01da99e76c31f3"
+python - <<'PY'
+import lm_eval
+from lm_eval.models.hf_vlms import HFLM
+print(f'lm_eval import gate passed: {getattr(lm_eval, "__version__", "unknown")}; HFLM={HFLM.__name__}', flush=True)
+PY
 
 timeout --signal=TERM --kill-after=120s "${FIRST_EVAL_MINUTES}m" \
   python scripts/openunlearning_adapter.py tofu-eval \

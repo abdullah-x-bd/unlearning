@@ -14,6 +14,11 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     assert "scripts/run_tofu_openunlearning_eval.sh" in workflow
     assert "scripts/preflight_tofu_openunlearning.py" in workflow
     assert "runpodctl pod delete \\$RUNPOD_POD_ID" in workflow
+    assert "lm-eval==0.4.11" in workflow
+    assert "from lm_eval.models.hf_vlms import HFLM" in workflow
+    assert "Preserve hash-verified checkpoints after evaluator failure" in workflow
+    assert "tofu-openunlearning-recovery.tar" in workflow
+    assert "retention-days: 1" in workflow
 
     assert "tofu_llama32_1b_retain90_reference" in preflight
     assert "open-unlearning/tofu_Llama-3.2-1B-Instruct" not in preflight
@@ -23,6 +28,8 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
     assert 'SECOND_EVAL_MINUTES="${SECOND_EVAL_MINUTES:-45}"' in runner
     assert runner.count("openunlearning_adapter.py tofu-eval") == 2
     assert runner.count("--attention-implementation eager") == 2
+    assert "external/open-unlearning[lm-eval]" in runner
+    assert "from lm_eval.models.hf_vlms import HFLM" in runner
     assert "tofu-baselines" not in runner
     assert "src/train.py" not in runner
     assert "Canonical state hash gate passed" in runner
