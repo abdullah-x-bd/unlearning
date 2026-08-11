@@ -21,9 +21,13 @@ def test_openunlearning_workflow_is_guarded_and_does_not_run_baselines():
 
     assert "tofu_llama32_1b_retain90_reference" in preflight
     assert "open-unlearning/tofu_Llama-3.2-1B-Instruct" not in preflight
+    assert "external/open-unlearning[lm-eval]" in preflight
     assert "lm-eval[hf]==0.4.11" in preflight
     assert "torch==2.4.1" in preflight
     assert "https://download.pytorch.org/whl/cpu" in preflight
+    assert '"transformers": "4.51.3"' in preflight
+    assert '"accelerate": "0.34.2"' in preflight
+    assert '"huggingface_hub": "0.36.0"' in preflight
     assert "import transformers" in preflight
     assert "import accelerate" in preflight
     assert "import peft" in preflight
