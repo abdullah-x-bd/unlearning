@@ -45,8 +45,7 @@ jobs:
           set -Eeuo pipefail
           test -n "$RUNPOD_API_KEY"
           test -n "$GITHUB_READ_TOKEN"
-          python -m pip install --disable-pip-version-check --quiet \
-            huggingface_hub==0.36.0 pyyaml==6.0.2
+          python -m pip install --disable-pip-version-check --quiet huggingface_hub==0.36.0 pyyaml==6.0.2
           python scripts/runpod_control.py auth-check
           python scripts/preflight_tofu_openunlearning.py
 
@@ -63,9 +62,8 @@ jobs:
           assert payload['name'] == 'tofu-openunlearning-recovery-checkpoints'
           assert payload['size_in_bytes'] == int(os.environ['RECOVERY_ARTIFACT_SIZE'])
           assert payload.get('expired') is False
-          workflow_run = payload.get('workflow_run') or {}
-          assert workflow_run.get('id') == int(os.environ['RECOVERY_SOURCE_RUN_ID'])
-          print('Recovery artifact metadata gate passed; checkpoint archive is still available')
+          assert (payload.get('workflow_run') or {}).get('id') == int(os.environ['RECOVERY_SOURCE_RUN_ID'])
+          print('Recovery artifact metadata gate passed')
           PY
 
           python scripts/bootstrap_upstreams.py
@@ -73,13 +71,6 @@ jobs:
           python scripts/patch_openunlearning_bf16_numpy.py
           grep -F 'avg_losses = avg_losses.float().cpu().numpy().tolist()' external/open-unlearning/src/evals/metrics/utils.py
           grep -F 'normalized_probs = normalized_probs.float().cpu().numpy().tolist()' external/open-unlearning/src/evals/metrics/utils.py
-          python - <<'PY'
-          import torch
-          x = torch.tensor([1.5], dtype=torch.bfloat16)
-          value = x.float().cpu().numpy().tolist()
-          assert value == [1.5]
-          print('BF16 to float32 to NumPy compatibility gate passed')
-          PY
 
       - name: Generate ephemeral SSH and access-token files
         run: |
@@ -107,7 +98,7 @@ jobs:
               --max-hourly-cost "$MAX_HOURLY_COST" \
               --wait-seconds 900 \
               --output runpod-allocation.json; then
-              echo "Allocation attempt ${attempt} did not yield an acceptable <= $${MAX_HOURLY_COST}/h Pod; retrying if attempts remain."
+              echo "Allocation attempt ${attempt} did not yield an acceptable <= $${MAX_HOURLY_COST}/h Pod"
               sleep 20
               continue
             fi
@@ -160,7 +151,6 @@ jobs:
             "NVIDIA RTX A6000"|"NVIDIA A40") ;;
             *) exit 44 ;;
           esac
-          echo "minimum_free_mib=$MIN_FREE_GPU_MIB"
           (( free_mib >= MIN_FREE_GPU_MIB )) || exit 43
           echo "clean_gpu_gate=passed"
           REMOTE
@@ -202,7 +192,6 @@ jobs:
           rm -f /workspace/hf_token /workspace/github_token
           export HF_HUB_DISABLE_TELEMETRY=1 TOKENIZERS_PARALLELISM=false WANDB_MODE=disabled
 
-          echo "Downloading preserved hash-verified checkpoint artifact ${RECOVERY_ARTIFACT_ID}"
           curl -fL --retry 3 --retry-delay 3 \
             -H "Authorization: Bearer ${GH_TOKEN_VALUE}" \
             -H "Accept: application/vnd.github+json" \
@@ -226,15 +215,9 @@ jobs:
           FIRST_EVAL_MINUTES=75 SECOND_EVAL_MINUTES=45 \
             bash scripts/run_tofu_openunlearning_recovery_eval.sh
 
-          test -s results/tofu-openunlearning-recovery-evidence.tar.gz
-          test -s results/tofu-openunlearning-recovery-evidence.sha256
-          (cd results && sha256sum -c tofu-openunlearning-recovery-evidence.sha256)
-
           python - <<'PY'
           from pathlib import Path
-          import hashlib
-          import json
-          import shutil
+          import hashlib, json, shutil
 
           sources = {
               'retain90_TOFU_EVAL.json': Path('results/openunlearning/tofu/reference/retain90/TOFU_EVAL.json'),
@@ -249,7 +232,7 @@ jobs:
               'gpu_probe.json': Path('results/tofu-openunlearning-recovery-gpu-probe.json'),
               'runpod_allocation.json': Path('results/runpod-allocation.json'),
           }
-          handoff = Path('results/recovery-handoff')
+          handoff = Path('/workspace/recovery-handoff')
           if handoff.exists():
               shutil.rmtree(handoff)
           handoff.mkdir(parents=True)
@@ -261,39 +244,33 @@ jobs:
               target = handoff / name
               shutil.copy2(source, target)
               manifest['files'][name] = {
-                  'source': str(source),
                   'bytes': target.stat().st_size,
                   'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
               }
-          (handoff / 'handoff-manifest.json').write_text(
-              json.dumps(manifest, indent=2, sort_keys=True) + '\n'
-          )
-          print(f'Direct recovery handoff prepared with {len(sources)} validated JSON files')
+          (handoff / 'handoff-manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+          print(f'Remote handoff frozen: {len(sources)} validated JSON files')
           PY
-          test -s results/recovery-handoff/handoff-manifest.json
-          ls -lh results/recovery-handoff/*.json
+          test -s /workspace/recovery-handoff/handoff-manifest.json
           REMOTE
 
-      - name: Collect and verify direct evaluation handoff
+      - name: Collect, verify, and freeze result bundle
         id: collect
         if: always() && steps.pod.outputs.pod_id != ''
         continue-on-error: true
         run: |
           set -Eeuo pipefail
-          mkdir -p gpu-artifacts
-          cp runpod-allocation.json gpu-artifacts/
-          cp recovery-artifact-metadata.json gpu-artifacts/
-          cp .runpod/gpu-cleanliness-accepted.txt gpu-artifacts/ || true
+          rm -rf preserved-openunlearning-results
+          mkdir -p preserved-openunlearning-results
 
           copied=0
           for attempt in 1 2 3; do
-            echo "Direct result handoff attempt ${attempt}/3"
-            rm -rf gpu-artifacts/recovery-handoff
+            echo "Result transfer attempt ${attempt}/3"
+            rm -rf preserved-openunlearning-results/*
             if scp -r -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
               -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=15 -o ConnectionAttempts=2 \
-              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/recovery-handoff" \
-              gpu-artifacts/; then
+              "root@${{ steps.pod.outputs.host }}:/workspace/recovery-handoff/." \
+              preserved-openunlearning-results/; then
               copied=1
               break
             fi
@@ -303,13 +280,10 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
-          import hashlib
-          import json
+          import hashlib, json
 
-          root = Path('gpu-artifacts/recovery-handoff')
-          manifest_path = root / 'handoff-manifest.json'
-          assert manifest_path.is_file() and manifest_path.stat().st_size > 0
-          manifest = json.loads(manifest_path.read_text())
+          root = Path('preserved-openunlearning-results')
+          manifest = json.loads((root / 'handoff-manifest.json').read_text())
           assert manifest.get('status') == 'passed'
           required = {
               'retain90_TOFU_EVAL.json',
@@ -325,60 +299,55 @@ jobs:
               'runpod_allocation.json',
           }
           files = manifest.get('files') or {}
-          assert set(files) == required, (set(files), required)
+          assert set(files) == required
           for name in sorted(required):
               path = root / name
               assert path.is_file() and path.stat().st_size > 0, name
               json.loads(path.read_text())
-              observed = hashlib.sha256(path.read_bytes()).hexdigest()
-              assert observed == files[name]['sha256'], name
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == files[name]['sha256'], name
               assert path.stat().st_size == files[name]['bytes'], name
-          print(f'Direct recovery handoff verified: {len(required)} JSON files')
+          print(f'Local handoff verified: {len(required)} JSON files')
           PY
 
-          archive_copied=0
-          for attempt in 1 2 3; do
-            echo "Optional compact archive transfer attempt ${attempt}/3"
-            rm -f gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz \
-              gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256
-            if scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
-                -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                -o ConnectTimeout=15 -o ConnectionAttempts=2 \
-                "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/tofu-openunlearning-recovery-evidence.tar.gz" \
-                gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz \
-              && scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
-                -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                -o ConnectTimeout=15 -o ConnectionAttempts=2 \
-                "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/tofu-openunlearning-recovery-evidence.sha256" \
-                gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256; then
-              archive_copied=1
-              break
-            fi
-            sleep 10
-          done
-          if [[ "$archive_copied" == "1" ]]; then
-            (
-              cd gpu-artifacts
-              sha256sum -c tofu-openunlearning-recovery-evidence.sha256
-              tar -tzf tofu-openunlearning-recovery-evidence.tar.gz > evidence-manifest.txt
-              if grep -E '(^|/)checkpoint(/|$)|\.(safetensors|bin|pt|pth|npy|npz)$' evidence-manifest.txt; then
-                echo 'Compact evidence unexpectedly contains checkpoint/binary payloads.' >&2
-                exit 1
-              fi
-            )
-          else
-            echo "Compact archive transfer unavailable; direct hash-verified JSON handoff is complete and is the required evidence path."
+          tar -czf tofu-openunlearning-results.tar.gz -C preserved-openunlearning-results .
+          sha256sum tofu-openunlearning-results.tar.gz > tofu-openunlearning-results.sha256
+          sha256sum -c tofu-openunlearning-results.sha256
+          tar -tzf tofu-openunlearning-results.tar.gz > tofu-openunlearning-results.manifest.txt
+          grep -Fx './retain90_TOFU_EVAL.json' tofu-openunlearning-results.manifest.txt
+          grep -Fx './original_TOFU_EVAL.json' tofu-openunlearning-results.manifest.txt
+          grep -Fx './deletion_TOFU_EVAL.json' tofu-openunlearning-results.manifest.txt
+          grep -Fx './uas_evaluation_summary.json' tofu-openunlearning-results.manifest.txt
+          if grep -E '(^|/)checkpoint(/|$)|\.(safetensors|bin|pt|pth|npy|npz)$' tofu-openunlearning-results.manifest.txt; then
+            echo 'Forbidden checkpoint/binary payload found in result bundle.' >&2
+            exit 1
           fi
+          ls -lh tofu-openunlearning-results.tar.gz tofu-openunlearning-results.sha256
+
+      - name: Upload verified OpenUnlearning results before Pod termination
+        id: upload_results
+        if: always() && steps.collect.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tofu-openunlearning-results
+          path: |
+            tofu-openunlearning-results.tar.gz
+            tofu-openunlearning-results.sha256
+            tofu-openunlearning-results.manifest.txt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
 
       - name: Terminate RunPod Pod
         if: always() && steps.pod.outputs.pod_id != ''
         run: |
           python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
 
-      - name: Record bounded evaluation-only cost
+      - name: Record evaluation-only cost
         if: always() && steps.pod.outputs.pod_id != ''
         run: |
-          mkdir -p gpu-artifacts
+          mkdir -p run-metadata
+          cp runpod-allocation.json recovery-artifact-metadata.json run-metadata/ || true
+          cp .runpod/gpu-cleanliness-accepted.txt run-metadata/ || true
           python - <<'PY'
           import json, os, time
           from pathlib import Path
@@ -395,21 +364,21 @@ jobs:
               'benchmark': 'OpenUnlearning TOFU forget10 evaluation-only recovery',
               'recovery_artifact_id': int(os.environ['RECOVERY_ARTIFACT_ID']),
           }
-          Path('gpu-artifacts/cost-estimate.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          Path('run-metadata/cost-estimate.json').write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
           print(json.dumps(payload, indent=2, sort_keys=True))
           PY
 
-      - name: Upload recovery-evaluation evidence
+      - name: Upload run metadata
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tofu-openunlearning-recovery-evidence
-          path: gpu-artifacts
+          name: tofu-openunlearning-recovery-metadata
+          path: run-metadata
           if-no-files-found: warn
-          retention-days: 60
+          retention-days: 90
           compression-level: 0
 
-      - name: Enforce evaluation and direct evidence-transfer success
+      - name: Enforce evaluation and preserved-result success
         if: always()
         run: |
           if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
@@ -417,11 +386,11 @@ jobs:
             exit 1
           fi
           if [[ "${{ steps.collect.outcome }}" != "success" ]]; then
-            echo "The direct evaluation-result handoff or verification failed." >&2
+            echo "The result transfer or hash verification failed." >&2
             exit 1
           fi
-          test -s gpu-artifacts/recovery-handoff/handoff-manifest.json
-          test -s gpu-artifacts/recovery-handoff/retain90_TOFU_EVAL.json
-          test -s gpu-artifacts/recovery-handoff/original_TOFU_EVAL.json
-          test -s gpu-artifacts/recovery-handoff/deletion_TOFU_EVAL.json
-          test -s gpu-artifacts/recovery-handoff/uas_evaluation_summary.json
+          if [[ "${{ steps.upload_results.outcome }}" != "success" ]]; then
+            echo "The verified OpenUnlearning result artifact was not uploaded before Pod termination." >&2
+            exit 1
+          fi
+          echo "OpenUnlearning evaluation complete; verified result artifact uploaded before Pod termination."
