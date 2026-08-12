@@ -1,0 +1,98 @@
+{
+  "status": "passed",
+  "release_date": "2026-08-12",
+  "benchmark": "TOFU",
+  "framework": "OpenUnlearning",
+  "framework_commit": "4ad738aaf60f6a4385f6e2506d01da99e76c31f3",
+  "model": "Llama-3.2-1B-Instruct",
+  "forget_split": "forget10",
+  "retain_split": "retain90",
+  "holdout_split": "holdout10",
+  "attention_implementation": "eager",
+  "canonical_states": {
+    "original_model_sha256": "54c711e9bde77215d9c5def50429f925a382bdcd28150bb87a89a118dd54bc65",
+    "original_optimizer_sha256": "7dae55302988b834099f224a6ababcbd97a3411afa1b54e5e9a1739854f8e773",
+    "deletion_model_sha256": "067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3",
+    "deletion_optimizer_sha256": "0152484534eab198ebee5a500e77d81451f2cba34ea6baa987ccc5726e20daa1",
+    "forget_count": 400,
+    "source_records": 4000,
+    "retained_records": 3600,
+    "forgotten_ids_present": false,
+    "labels_preserved": true
+  },
+  "retain_reference": {
+    "repo_id": "open-unlearning/tofu_Llama-3.2-1B-Instruct_retain90",
+    "revision": "7114300c0049527a71833f5683965c358ad9dcbf"
+  },
+  "metrics": {
+    "original": {
+      "model_utility": 0.3542886523280535,
+      "forget_quality": 5.974773347845895e-08,
+      "forget_truth_ratio": 0.7502411072520634,
+      "forget_Q_A_Prob": 0.168255615234375,
+      "forget_Q_A_ROUGE": 0.344503597823169,
+      "retain_Q_A_Prob": 0.1650482177734375,
+      "retain_Q_A_ROUGE": 0.32224093005160354,
+      "retain_Truth_Ratio": 0.19474971536330316,
+      "mia_min_k": 0.339890625,
+      "extraction_strength": 0.0573743476061314,
+      "privleak": 6.871097978184733
+    },
+    "deletion": {
+      "model_utility": 0.3541358895644085,
+      "forget_quality": 3.913229651378406e-08,
+      "forget_truth_ratio": 0.7504341644451512,
+      "forget_Q_A_Prob": 0.1669091796875,
+      "forget_Q_A_ROUGE": 0.3475321272241554,
+      "retain_Q_A_Prob": 0.1646966552734375,
+      "retain_Q_A_ROUGE": 0.32288039284415937,
+      "retain_Truth_Ratio": 0.19543381627461617,
+      "mia_min_k": 0.33683125,
+      "extraction_strength": 0.056824528132684196,
+      "privleak": 7.3664079642419305
+    },
+    "retain90_reference": {
+      "model_utility": 0.5927319186226765,
+      "forget_quality": null,
+      "forget_truth_ratio": 0.627597031279494,
+      "forget_Q_A_Prob": 0.11615310668945313,
+      "forget_Q_A_ROUGE": 0.37963473660913705,
+      "retain_Q_A_Prob": 0.8802783203125,
+      "retain_Q_A_ROUGE": 0.8282506402922502,
+      "retain_Truth_Ratio": 0.513091141649154,
+      "mia_min_k": 0.38233125,
+      "extraction_strength": 0.05961142209737882,
+      "privleak": 23.533749995293245
+    }
+  },
+  "evaluation_only": {
+    "training_passes": 0,
+    "optimizer_updates": 0,
+    "gpu": "NVIDIA A40",
+    "torch": "2.4.1+cu124",
+    "cuda_runtime": "12.4",
+    "reported_hourly_gpu_cost_usd": 0.44,
+    "elapsed_seconds_until_cleanup": 2410.4922726154327,
+    "estimated_gpu_cost_until_cleanup_usd": 0.2946157222085529
+  },
+  "provenance": {
+    "frozen_source_run": 31490644488,
+    "frozen_source_commit": "c2375c1e491224062c05de6a3abe1b50f4af3937",
+    "source_evidence_artifact_id": 9104982056,
+    "recovery_checkpoint_artifact_id": 9114652333,
+    "evaluation_run": 31607929368,
+    "evaluation_job": 94151588320,
+    "evaluation_head": "ce99971f0bc6545164c232789e317ff1e575c950",
+    "results_artifact_id": 9147513923,
+    "results_artifact_zip_sha256": "b143e1784111ae3ae1f8ae7ef3bcc4d1502de2f76a3dd2e0254c311332ecacdd",
+    "results_tar_sha256": "d6b82c231fb73fecfa12996a4eb5bc68cdbb93959989ed660d7351464a6ce4ae",
+    "metadata_artifact_id": 9147515241,
+    "metadata_artifact_zip_sha256": "9f795ef861b03d53d72a4856464bd6d4c9393c1f10fabefe5e3be6729cc30d5d"
+  },
+  "claim_boundary": {
+    "matched_local_retain_only_control_completed": false,
+    "approximate_baseline_comparison_completed": false,
+    "multi_gpu_exactness_established": false,
+    "legal_compliance_claimed": false
+  }
+}
