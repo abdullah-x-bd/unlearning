@@ -1,1 +1,1 @@
-Evaluation-only retry using preserved canonical checkpoints from artifact 9114652333 after BF16 NumPy interoperability fix. No reconstruction or optimizer updates.
+Evaluation-only rerun using preserved canonical checkpoints from artifact 9114652333 after compact evidence packaging and strict transfer verification fix. No reconstruction or optimizer updates. Trigger 2026-08-12 evidence-handoff-v2.
