@@ -205,9 +205,22 @@ jobs:
           unset GH_TOKEN_VALUE
           observed="$(sha256sum /workspace/recovery.zip | awk '{print $1}')"
           test "$observed" = "$RECOVERY_SHA"
-          test "$(unzip -Z1 /workspace/recovery.zip | wc -l)" -eq 1
-          test "$(unzip -Z1 /workspace/recovery.zip)" = "tofu-openunlearning-recovery.tar"
-          unzip -p /workspace/recovery.zip > /workspace/recovery.tar
+          python - <<'PY'
+          from pathlib import Path
+          import shutil, zipfile
+
+          source = Path('/workspace/recovery.zip')
+          target = Path('/workspace/recovery.tar')
+          with zipfile.ZipFile(source) as archive:
+              names = archive.namelist()
+              if names != ['tofu-openunlearning-recovery.tar']:
+                  raise RuntimeError(f'unexpected recovery artifact members: {names!r}')
+              with archive.open(names[0], 'r') as src, target.open('wb') as dst:
+                  shutil.copyfileobj(src, dst, length=16 * 1024 * 1024)
+          if not target.is_file() or target.stat().st_size == 0:
+              raise RuntimeError('recovery tar extraction produced an empty file')
+          print(f'Extracted verified recovery tar: {target.stat().st_size} bytes')
+          PY
           rm -f /workspace/recovery.zip
           tar -xf /workspace/recovery.tar -C /workspace/unlearning
           rm -f /workspace/recovery.tar
