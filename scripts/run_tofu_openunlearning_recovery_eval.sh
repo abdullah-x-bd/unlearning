@@ -1,53 +1,123 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+export UAS_REPO_ROOT="$REPO_ROOT"
+
 FIRST_EVAL_MINUTES="${FIRST_EVAL_MINUTES:-75}"
 SECOND_EVAL_MINUTES="${SECOND_EVAL_MINUTES:-45}"
-RESULTS_DIR="results"
-RECON_DIR="runs/tofu-openunlearning-reconstruction"
+RESULTS_DIR="$REPO_ROOT/results"
+RECON_DIR="$REPO_ROOT/runs/tofu-openunlearning-reconstruction"
 OPENUNLEARNING_DIR="$RESULTS_DIR/openunlearning/tofu"
 FROZEN="$RESULTS_DIR/releases/tofu-llama32-1b-forget10-2026-08-11/frozen-hashes.json"
+EVIDENCE_TAR="$RESULTS_DIR/tofu-openunlearning-recovery-evidence.tar.gz"
+EVIDENCE_SHA="$RESULTS_DIR/tofu-openunlearning-recovery-evidence.sha256"
 
 mkdir -p "$RESULTS_DIR"
 exec > >(tee -a "$RESULTS_DIR/tofu-openunlearning-recovery-eval.log") 2>&1
 
 package_evidence() {
-  set +e
-  df -h > "$RESULTS_DIR/tofu-openunlearning-recovery-disk-after.txt" 2>&1
+  df -h > "$RESULTS_DIR/tofu-openunlearning-recovery-disk-after.txt" 2>&1 || true
   python - <<'PY'
 from pathlib import Path
 import hashlib
+import os
 import tarfile
 
-output = Path('results/tofu-openunlearning-recovery-evidence.tar.gz')
-roots = [Path('results/openunlearning/tofu')]
+repo = Path(os.environ['UAS_REPO_ROOT']).resolve()
+results = repo / 'results'
+output = results / 'tofu-openunlearning-recovery-evidence.tar.gz'
+allowed_suffixes = {'.json', '.jsonl', '.txt', '.log', '.yaml', '.yml', '.csv'}
+forbidden_suffixes = {'.safetensors', '.bin', '.pt', '.pth', '.npy', '.npz'}
+
+files = []
+openunlearning = results / 'openunlearning' / 'tofu'
+if openunlearning.exists():
+    for path in sorted(openunlearning.rglob('*')):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(openunlearning)
+        if 'checkpoint' in rel.parts or path.suffix.lower() in forbidden_suffixes:
+            continue
+        if path.suffix.lower() in allowed_suffixes:
+            files.append(path)
+
 singles = [
-    Path('results/runpod-allocation.json'),
-    Path('results/tofu-openunlearning-recovery-eval.log'),
-    Path('results/tofu-openunlearning-recovery-gpu-probe.json'),
-    Path('results/tofu-openunlearning-recovery-disk-before.txt'),
-    Path('results/tofu-openunlearning-recovery-disk-after.txt'),
-    Path('results/openunlearning/bf16-numpy-patch.json'),
-    Path('runs/tofu-openunlearning-reconstruction/summary.json'),
-    Path('results/releases/tofu-llama32-1b-forget10-2026-08-11/frozen-hashes.json'),
+    results / 'runpod-allocation.json',
+    results / 'tofu-openunlearning-recovery-eval.log',
+    results / 'tofu-openunlearning-recovery-gpu-probe.json',
+    results / 'tofu-openunlearning-recovery-disk-before.txt',
+    results / 'tofu-openunlearning-recovery-disk-after.txt',
+    results / 'openunlearning' / 'bf16-numpy-patch.json',
+    repo / 'runs' / 'tofu-openunlearning-reconstruction' / 'summary.json',
+    results / 'releases' / 'tofu-llama32-1b-forget10-2026-08-11' / 'frozen-hashes.json',
 ]
+for path in singles:
+    if path.exists() and path not in files:
+        files.append(path)
+
 with tarfile.open(output, 'w:gz') as archive:
-    for root in roots:
-        if root.exists():
-            for path in sorted(root.rglob('*')):
-                if path.is_file():
-                    archive.add(path, arcname=str(path))
-    for path in singles:
-        if path.exists():
-            archive.add(path, arcname=str(path))
+    for path in sorted(files):
+        archive.add(path, arcname=str(path.relative_to(repo)))
+
 digest = hashlib.sha256(output.read_bytes()).hexdigest()
-Path('results/tofu-openunlearning-recovery-evidence.sha256').write_text(
+(results / 'tofu-openunlearning-recovery-evidence.sha256').write_text(
     f'{digest}  {output.name}\n'
 )
+print(f'OpenUnlearning recovery evidence files: {len(files)}', flush=True)
+print(f'OpenUnlearning recovery evidence bytes: {output.stat().st_size}', flush=True)
 print(f'OpenUnlearning recovery evidence TAR SHA256: {digest}', flush=True)
 PY
 }
-trap package_evidence EXIT
+
+verify_evidence() {
+  test -s "$EVIDENCE_TAR"
+  test -s "$EVIDENCE_SHA"
+  (
+    cd "$RESULTS_DIR"
+    sha256sum -c "$(basename "$EVIDENCE_SHA")"
+  )
+  python - <<'PY'
+from pathlib import Path
+import os
+import tarfile
+
+repo = Path(os.environ['UAS_REPO_ROOT']).resolve()
+archive = repo / 'results' / 'tofu-openunlearning-recovery-evidence.tar.gz'
+required = {
+    'results/openunlearning/tofu/reference/retain90/TOFU_EVAL.json',
+    'results/openunlearning/tofu/models/uas_frozen_original_forget10/TOFU_EVAL.json',
+    'results/openunlearning/tofu/models/uas_frozen_original_forget10/uas_interop.json',
+    'results/openunlearning/tofu/models/uas_frozen_trace_delete_forget10/TOFU_EVAL.json',
+    'results/openunlearning/tofu/models/uas_frozen_trace_delete_forget10/uas_interop.json',
+    'results/openunlearning/tofu/uas_evaluation_summary.json',
+    'runs/tofu-openunlearning-reconstruction/summary.json',
+    'results/releases/tofu-llama32-1b-forget10-2026-08-11/frozen-hashes.json',
+}
+forbidden_suffixes = {'.safetensors', '.bin', '.pt', '.pth', '.npy', '.npz'}
+with tarfile.open(archive, 'r:gz') as handle:
+    names = set(handle.getnames())
+missing = sorted(required - names)
+assert not missing, f'missing required evidence members: {missing}'
+for name in names:
+    path = Path(name)
+    assert 'checkpoint' not in path.parts, f'checkpoint leaked into compact evidence: {name}'
+    assert path.suffix.lower() not in forbidden_suffixes, f'binary leaked into compact evidence: {name}'
+print(f'Compact recovery evidence gate passed with {len(names)} members', flush=True)
+PY
+}
+
+on_exit() {
+  rc=$?
+  trap - EXIT
+  if [[ "$rc" -ne 0 ]]; then
+    set +e
+    package_evidence
+  fi
+  exit "$rc"
+}
+trap on_exit EXIT
 
 export HF_HUB_DISABLE_TELEMETRY=1
 export TOKENIZERS_PARALLELISM=false
@@ -130,7 +200,9 @@ timeout --signal=TERM --kill-after=120s "${SECOND_EVAL_MINUTES}m" \
 
 test -f "$OPENUNLEARNING_DIR/reference/retain90/TOFU_EVAL.json"
 test -f "$OPENUNLEARNING_DIR/models/uas_frozen_original_forget10/TOFU_EVAL.json"
+test -f "$OPENUNLEARNING_DIR/models/uas_frozen_original_forget10/uas_interop.json"
 test -f "$OPENUNLEARNING_DIR/models/uas_frozen_trace_delete_forget10/TOFU_EVAL.json"
+test -f "$OPENUNLEARNING_DIR/models/uas_frozen_trace_delete_forget10/uas_interop.json"
 
 python - <<'PY'
 import json
@@ -155,4 +227,8 @@ payload = {
 print(json.dumps(payload, indent=2, sort_keys=True), flush=True)
 PY
 
-echo "Recovered canonical checkpoints evaluated successfully; no optimizer updates were run."
+package_evidence
+verify_evidence
+trap - EXIT
+
+echo "Recovered canonical checkpoints evaluated successfully; compact evidence verified; no optimizer updates were run."

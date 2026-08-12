@@ -213,23 +213,62 @@ jobs:
           cp /workspace/runpod-allocation.json results/runpod-allocation.json
           FIRST_EVAL_MINUTES=75 SECOND_EVAL_MINUTES=45 \
             bash scripts/run_tofu_openunlearning_recovery_eval.sh
+
+          test -s results/tofu-openunlearning-recovery-evidence.tar.gz
+          test -s results/tofu-openunlearning-recovery-evidence.sha256
+          (cd results && sha256sum -c tofu-openunlearning-recovery-evidence.sha256)
+          ls -lh results/tofu-openunlearning-recovery-evidence.tar.gz results/tofu-openunlearning-recovery-evidence.sha256
           REMOTE
 
-      - name: Collect evaluation evidence
+      - name: Collect and verify compact evaluation evidence
+        id: collect
         if: always() && steps.pod.outputs.pod_id != ''
         continue-on-error: true
         run: |
+          set -Eeuo pipefail
           mkdir -p gpu-artifacts
           cp runpod-allocation.json gpu-artifacts/
           cp recovery-artifact-metadata.json gpu-artifacts/
           cp .runpod/gpu-cleanliness-accepted.txt gpu-artifacts/ || true
-          for file in tofu-openunlearning-recovery-evidence.tar.gz tofu-openunlearning-recovery-evidence.sha256; do
-            scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
-              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=10 -o ConnectionAttempts=2 \
-              "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/$file" \
-              "gpu-artifacts/$file" || true
+
+          copied=0
+          for attempt in 1 2 3; do
+            echo "Evidence transfer attempt ${attempt}/3"
+            rm -f gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz \
+              gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256
+            if scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
+                -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+                "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/tofu-openunlearning-recovery-evidence.tar.gz" \
+                gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz \
+              && scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
+                -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                -o ConnectTimeout=15 -o ConnectionAttempts=2 \
+                "root@${{ steps.pod.outputs.host }}:/workspace/unlearning/results/tofu-openunlearning-recovery-evidence.sha256" \
+                gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256; then
+              copied=1
+              break
+            fi
+            sleep 10
           done
+          [[ "$copied" == "1" ]]
+          test -s gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz
+          test -s gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256
+          (
+            cd gpu-artifacts
+            sha256sum -c tofu-openunlearning-recovery-evidence.sha256
+            tar -tzf tofu-openunlearning-recovery-evidence.tar.gz > evidence-manifest.txt
+            grep -Fx 'results/openunlearning/tofu/reference/retain90/TOFU_EVAL.json' evidence-manifest.txt
+            grep -Fx 'results/openunlearning/tofu/models/uas_frozen_original_forget10/TOFU_EVAL.json' evidence-manifest.txt
+            grep -Fx 'results/openunlearning/tofu/models/uas_frozen_original_forget10/uas_interop.json' evidence-manifest.txt
+            grep -Fx 'results/openunlearning/tofu/models/uas_frozen_trace_delete_forget10/TOFU_EVAL.json' evidence-manifest.txt
+            grep -Fx 'results/openunlearning/tofu/models/uas_frozen_trace_delete_forget10/uas_interop.json' evidence-manifest.txt
+            grep -Fx 'results/openunlearning/tofu/uas_evaluation_summary.json' evidence-manifest.txt
+            if grep -E '(^|/)checkpoint(/|$)|\.(safetensors|bin|pt|pth|npy|npz)$' evidence-manifest.txt; then
+              echo 'Compact evidence unexpectedly contains checkpoint/binary payloads.' >&2
+              exit 1
+            fi
+          )
 
       - name: Terminate RunPod Pod
         if: always() && steps.pod.outputs.pod_id != ''
@@ -270,12 +309,18 @@ jobs:
           retention-days: 60
           compression-level: 0
 
-      - name: Enforce evaluation success
+      - name: Enforce evaluation and evidence-transfer success
         if: always()
         run: |
           if [[ "${{ steps.remote.outcome }}" != "success" ]]; then
             echo "The evaluation-only recovery run did not complete successfully." >&2
             exit 1
           fi
-          test -f gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz
-          test -f gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256
+          if [[ "${{ steps.collect.outcome }}" != "success" ]]; then
+            echo "The compact evidence transfer or verification failed." >&2
+            exit 1
+          fi
+          test -s gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz
+          test -s gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256
+          test -s gpu-artifacts/evidence-manifest.txt
+          (cd gpu-artifacts && sha256sum -c tofu-openunlearning-recovery-evidence.sha256)

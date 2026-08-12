@@ -18,3 +18,18 @@ def test_bf16_numpy_patch_is_minimal_and_recovery_runner_has_no_training():
     assert 'BF16 OpenUnlearning probability-metric execution gate passed' in runner
     assert 'patch_openunlearning_bf16_numpy.py' in runner
     assert 'reused_hash_verified_recovery_checkpoints' in runner
+
+
+def test_recovery_runner_emits_compact_verified_evidence():
+    runner = Path('scripts/run_tofu_openunlearning_recovery_eval.sh').read_text()
+
+    assert 'REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"' in runner
+    assert "'checkpoint' in rel.parts" in runner
+    for suffix in ['.safetensors', '.bin', '.pt', '.pth', '.npy', '.npz']:
+        assert suffix in runner
+    assert 'package_evidence' in runner
+    assert 'verify_evidence' in runner
+    assert 'sha256sum -c' in runner
+    assert 'uas_frozen_original_forget10/uas_interop.json' in runner
+    assert 'uas_frozen_trace_delete_forget10/uas_interop.json' in runner
+    assert 'Compact recovery evidence gate passed' in runner
