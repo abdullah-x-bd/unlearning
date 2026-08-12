@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: runpod-tofu-openunlearning-recovery-eval
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   evaluate:
