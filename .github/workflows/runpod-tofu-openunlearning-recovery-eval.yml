@@ -27,6 +27,7 @@ jobs:
       MAX_HOURLY_COST: "0.70"
       POD_SELF_DESTRUCT_SECONDS: "10800"
       MIN_FREE_GPU_MIB: "45000"
+      MIN_FREE_GPU_MIB_4090: "22000"
       MAX_GPU_ALLOCATION_ATTEMPTS: "4"
       RECOVERY_ARTIFACT_ID: "9114652333"
       RECOVERY_SOURCE_RUN_ID: "31519284938"
@@ -92,18 +93,18 @@ jobs:
           printf '%s' "$HF_ACCESS" > .runpod/hf_token
           printf '%s' "$GITHUB_READ_TOKEN" > .runpod/github_token
 
-      - name: Allocate one clean guarded 48 GB evaluation Pod
+      - name: Allocate one clean guarded evaluation Pod
         id: pod
         run: |
           set -Eeuo pipefail
           accepted=0
           for attempt in $(seq 1 "$MAX_GPU_ALLOCATION_ATTEMPTS"); do
-            echo "A6000/A40 allocation attempt ${attempt}/${MAX_GPU_ALLOCATION_ATTEMPTS}"
+            echo "A6000/A40/4090 allocation attempt ${attempt}/${MAX_GPU_ALLOCATION_ATTEMPTS}"
             rm -f runpod-allocation.json
             python scripts/runpod_control.py create \
               --name "uas-tofu-ou-recovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-a${attempt}" \
               --public-key-file .runpod/id_ed25519.pub \
-              --gpu-types "NVIDIA RTX A6000" "NVIDIA A40" \
+              --gpu-types "NVIDIA RTX A6000" "NVIDIA A40" "NVIDIA GeForce RTX 4090" \
               --max-hourly-cost "$MAX_HOURLY_COST" \
               --wait-seconds 900 \
               --output runpod-allocation.json
@@ -134,7 +135,7 @@ jobs:
             if ssh -i .runpod/id_ed25519 -p "$port" \
               -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=10 "root@$host" \
-              "MIN_FREE_GPU_MIB='$MIN_FREE_GPU_MIB' bash -s" <<'REMOTE' | tee "$clean_log"
+              "MIN_FREE_GPU_MIB='$MIN_FREE_GPU_MIB' MIN_FREE_GPU_MIB_4090='$MIN_FREE_GPU_MIB_4090' bash -s" <<'REMOTE' | tee "$clean_log"
           set -Eeuo pipefail
           gpu_line="$(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits | head -n 1)"
           gpu_name="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/^ +| +$/, "", $1); print $1}')"
@@ -144,13 +145,17 @@ jobs:
           echo "gpu_name=$gpu_name"
           echo "total_mib=$total_mib"
           echo "free_mib=$free_mib"
-          echo "minimum_free_mib=$MIN_FREE_GPU_MIB"
           if [[ -n "$compute_apps" ]]; then
             echo "foreign_compute_processes_present=true"; printf '%s\n' "$compute_apps"; exit 42
           fi
           echo "foreign_compute_processes_present=false"
-          (( free_mib >= MIN_FREE_GPU_MIB )) || exit 43
-          [[ "$gpu_name" == "NVIDIA RTX A6000" || "$gpu_name" == "NVIDIA A40" ]] || exit 44
+          case "$gpu_name" in
+            "NVIDIA RTX A6000"|"NVIDIA A40") required_free_mib="$MIN_FREE_GPU_MIB" ;;
+            "NVIDIA GeForce RTX 4090") required_free_mib="$MIN_FREE_GPU_MIB_4090" ;;
+            *) exit 44 ;;
+          esac
+          echo "minimum_free_mib=$required_free_mib"
+          (( free_mib >= required_free_mib )) || exit 43
           echo "clean_gpu_gate=passed"
           REMOTE
             then
@@ -161,7 +166,7 @@ jobs:
             python scripts/runpod_control.py delete --pod-id "$pod_id" || true
             sleep 3
           done
-          [[ "$accepted" == "1" ]] || { echo "Could not obtain a clean A6000 or A40" >&2; exit 1; }
+          [[ "$accepted" == "1" ]] || { echo "Could not obtain a clean A6000, A40, or RTX 4090" >&2; exit 1; }
 
       - name: Download recovered canonical checkpoints and run evaluation only
         id: remote
