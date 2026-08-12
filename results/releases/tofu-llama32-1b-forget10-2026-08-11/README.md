@@ -30,7 +30,19 @@ Trace-preserving slot replay from that physically redacted store reproduced the 
 - shared oracle/replay model SHA-256: `067109bfd2e34f1616a8069d04ecd28b4814513332b03957ab917503122aeec3`
 - shared oracle/replay optimizer SHA-256: `0152484534eab198ebee5a500e77d81451f2cba34ea6baa987ccc5726e20daa1`
 
-This is the first frozen cross-family benchmark-facing exactness result in the project. Standardized OpenUnlearning behavioral evaluation is a separate next step and is not inferred from state equality.
+This is the first frozen cross-family benchmark-facing exactness result in the project.
+
+## Downstream standardized evaluation
+
+The separate OpenUnlearning behavioral evaluation of these exact frozen states is now complete. The canonical original and deletion checkpoints were reconstructed from this release evidence, hash-verified, exported to Hugging Face format, and evaluated without any additional training.
+
+The durable downstream record is:
+
+[`../tofu-openunlearning-eval-2026-08-12/`](../tofu-openunlearning-eval-2026-08-12/README.md)
+
+That evaluation records **0 training passes and 0 optimizer updates** and evaluates the exact states with the pinned OpenUnlearning TOFU evaluator at commit `4ad738aaf60f6a4385f6e2506d01da99e76c31f3` against the official pinned `retain90` calibration reference. The trace-preserving deletion state remains close to the original target on the core behavioral aggregates while both receive extremely small TOFU Forget Quality values against that official reference.
+
+The official `retain90` checkpoint is not a matched local retain-only retrain from this project's target-training pipeline, so the downstream result is not interpreted as a causal trace-preserving-versus-repacked comparison without an additional matched control.
 
 ## Frozen training definition
 
@@ -106,4 +118,4 @@ The 32-byte figure applies only to each fixed binary WAL record. It is not the t
 
 This release supports a controlled single-GPU claim: under the pinned RTX A6000 environment, Llama 3.2 1B Instruct identity replay is exact, and TOFU `forget10` trace-preserving replay after physical deletion of the 400 requested records reproduces the trace-preserving deletion oracle exactly, including optimizer state.
 
-It does not by itself establish standardized semantic forgetting quality, similarity to conventional `retain90` retraining, superiority over approximate unlearning methods, multi-GPU exactness, or legal compliance. Those questions require separate evaluation.
+This exactness release does not by itself establish semantic forgetting quality, similarity to conventional `retain90` retraining, superiority over approximate unlearning methods, multi-GPU exactness, or legal compliance. Standardized behavioral evaluation is now available as a separate downstream release record and is kept separate so state equality and behavioral evidence are not conflated.
