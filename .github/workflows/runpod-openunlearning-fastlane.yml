@@ -126,7 +126,7 @@ jobs:
 
             clean_log=".runpod/gpu-cleanliness-attempt-${attempt}.txt"
             if ssh -i .runpod/id_ed25519 -p "$port" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              "MIN_FREE_GPU_MIB='$MIN_FREE_GPU_MIB' bash -s" <<'REMOTE' | tee "$clean_log"
+              "root@$host" "MIN_FREE_GPU_MIB='$MIN_FREE_GPU_MIB' bash -s" <<'REMOTE' | tee "$clean_log"
           set -Eeuo pipefail
           gpu_line="$(nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits | head -n1)"
           gpu_name="$(printf '%s\n' "$gpu_line" | awk -F, '{gsub(/^ +| +$/, "", $1); print $1}')"
@@ -200,7 +200,7 @@ jobs:
 
       - name: Collect and verify compact evidence
         id: collect
-        if: always() && steps.pod.outputs.pod_id != ''
+        if: always() && steps.pod.outcome == 'success' && steps.pod.outputs.pod_id != ''
         continue-on-error: true
         run: |
           set -Eeuo pipefail
@@ -231,11 +231,11 @@ jobs:
         run: python scripts/runpod_control.py delete --pod-id "${{ steps.pod.outputs.pod_id }}"
 
       - name: Record cost
-        if: always() && steps.pod.outputs.pod_id != ''
+        if: always() && steps.pod.outcome == 'success' && steps.pod.outputs.pod_id != ''
         run: |
           mkdir -p gpu-artifacts
           python - <<'PY'
-          import json, os, time
+          import json, time
           from pathlib import Path
           p=json.loads(Path('runpod-allocation.json').read_text())
           elapsed=max(0,time.time()-int("${{ steps.pod.outputs.allocated_epoch }}"))
