@@ -251,6 +251,10 @@ jobs:
           print(f'Remote handoff frozen: {len(sources)} validated JSON files')
           PY
           test -s /workspace/recovery-handoff/handoff-manifest.json
+          rm -f /workspace/recovery-handoff.tar.gz
+          tar -czf /workspace/recovery-handoff.tar.gz -C /workspace recovery-handoff
+          test -s /workspace/recovery-handoff.tar.gz
+          tar -tzf /workspace/recovery-handoff.tar.gz | grep -Fx 'recovery-handoff/handoff-manifest.json'
           REMOTE
 
       - name: Collect, verify, and freeze result bundle
@@ -260,23 +264,29 @@ jobs:
         run: |
           set -Eeuo pipefail
           rm -rf preserved-openunlearning-results
+          rm -f recovery-handoff.tar.gz
           mkdir -p preserved-openunlearning-results
 
           copied=0
           for attempt in 1 2 3; do
-            echo "Result transfer attempt ${attempt}/3"
-            rm -rf preserved-openunlearning-results/*
-            if scp -r -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
+            echo "Result archive transfer attempt ${attempt}/3"
+            rm -f recovery-handoff.tar.gz
+            if scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
               -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=15 -o ConnectionAttempts=2 \
-              "root@${{ steps.pod.outputs.host }}:/workspace/recovery-handoff/." \
-              preserved-openunlearning-results/; then
+              -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+              "root@${{ steps.pod.outputs.host }}:/workspace/recovery-handoff.tar.gz" \
+              recovery-handoff.tar.gz; then
               copied=1
               break
             fi
             sleep 10
           done
           [[ "$copied" == "1" ]]
+          test -s recovery-handoff.tar.gz
+          tar -tzf recovery-handoff.tar.gz > recovery-handoff.remote-manifest.txt
+          grep -Fx 'recovery-handoff/handoff-manifest.json' recovery-handoff.remote-manifest.txt
+          tar -xzf recovery-handoff.tar.gz --strip-components=1 -C preserved-openunlearning-results
 
           python - <<'PY'
           from pathlib import Path
@@ -322,10 +332,11 @@ jobs:
             exit 1
           fi
           ls -lh tofu-openunlearning-results.tar.gz tofu-openunlearning-results.sha256
+          echo "evidence_ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Upload verified OpenUnlearning results before Pod termination
         id: upload_results
-        if: always() && steps.collect.outcome == 'success'
+        if: always() && steps.collect.outputs.evidence_ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: tofu-openunlearning-results
@@ -385,7 +396,7 @@ jobs:
             echo "The evaluation-only recovery run did not complete successfully." >&2
             exit 1
           fi
-          if [[ "${{ steps.collect.outcome }}" != "success" ]]; then
+          if [[ "${{ steps.collect.outcome }}" != "success" || "${{ steps.collect.outputs.evidence_ready }}" != "true" ]]; then
             echo "The result transfer or hash verification failed." >&2
             exit 1
           fi
