@@ -92,18 +92,18 @@ jobs:
           printf '%s' "$HF_ACCESS" > .runpod/hf_token
           printf '%s' "$GITHUB_READ_TOKEN" > .runpod/github_token
 
-      - name: Allocate one clean guarded RTX A6000 Pod
+      - name: Allocate one clean guarded 48 GB evaluation Pod
         id: pod
         run: |
           set -Eeuo pipefail
           accepted=0
           for attempt in $(seq 1 "$MAX_GPU_ALLOCATION_ATTEMPTS"); do
-            echo "A6000 allocation attempt ${attempt}/${MAX_GPU_ALLOCATION_ATTEMPTS}"
+            echo "A6000/A40 allocation attempt ${attempt}/${MAX_GPU_ALLOCATION_ATTEMPTS}"
             rm -f runpod-allocation.json
             python scripts/runpod_control.py create \
               --name "uas-tofu-ou-recovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-a${attempt}" \
               --public-key-file .runpod/id_ed25519.pub \
-              --gpu-types "NVIDIA RTX A6000" \
+              --gpu-types "NVIDIA RTX A6000" "NVIDIA A40" \
               --max-hourly-cost "$MAX_HOURLY_COST" \
               --wait-seconds 900 \
               --output runpod-allocation.json
@@ -150,7 +150,7 @@ jobs:
           fi
           echo "foreign_compute_processes_present=false"
           (( free_mib >= MIN_FREE_GPU_MIB )) || exit 43
-          [[ "$gpu_name" == "NVIDIA RTX A6000" ]] || exit 44
+          [[ "$gpu_name" == "NVIDIA RTX A6000" || "$gpu_name" == "NVIDIA A40" ]] || exit 44
           echo "clean_gpu_gate=passed"
           REMOTE
             then
@@ -161,7 +161,7 @@ jobs:
             python scripts/runpod_control.py delete --pod-id "$pod_id" || true
             sleep 3
           done
-          [[ "$accepted" == "1" ]] || { echo "Could not obtain clean RTX A6000" >&2; exit 1; }
+          [[ "$accepted" == "1" ]] || { echo "Could not obtain a clean A6000 or A40" >&2; exit 1; }
 
       - name: Download recovered canonical checkpoints and run evaluation only
         id: remote
