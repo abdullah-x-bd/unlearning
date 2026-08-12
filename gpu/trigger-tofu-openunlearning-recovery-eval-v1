@@ -1,1 +1,1 @@
-Evaluation-only rerun using preserved canonical checkpoints from artifact 9114652333 after compact evidence packaging and strict transfer verification fix. No reconstruction or optimizer updates. Trigger 2026-08-12 evidence-handoff-v2.
+Evaluation-only rerun using preserved canonical checkpoints from artifact 9114652333 after compact evidence packaging, strict transfer verification, and transient A6000 capacity retry hardening. No reconstruction or optimizer updates. Trigger 2026-08-12 capacity-retry-v3.
