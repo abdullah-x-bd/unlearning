@@ -175,12 +175,16 @@ jobs:
             runpod-allocation.json .runpod/hf_token .runpod/github_token \
             "root@${{ steps.pod.outputs.host }}:/workspace/"
 
+          rm -f recovery-handoff.tar.gz
           ssh -i .runpod/id_ed25519 -p "${{ steps.pod.outputs.port }}" \
             -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
             "root@${{ steps.pod.outputs.host }}" \
-            "REPO_SHA='${GITHUB_SHA}' SELF_DESTRUCT='${POD_SELF_DESTRUCT_SECONDS}' RECOVERY_ARTIFACT_ID='${RECOVERY_ARTIFACT_ID}' RECOVERY_SHA='${RECOVERY_ARTIFACT_ZIP_SHA256}' REPOSITORY='${GITHUB_REPOSITORY}' bash -s" <<'REMOTE'
+            "REPO_SHA='${GITHUB_SHA}' SELF_DESTRUCT='${POD_SELF_DESTRUCT_SECONDS}' RECOVERY_ARTIFACT_ID='${RECOVERY_ARTIFACT_ID}' RECOVERY_SHA='${RECOVERY_ARTIFACT_ZIP_SHA256}' REPOSITORY='${GITHUB_REPOSITORY}' bash -s" \
+            <<'REMOTE' > recovery-handoff.tar.gz
           set -Eeuo pipefail
+          exec 3>&1
+          exec 1>&2
           nohup bash -lc "sleep ${SELF_DESTRUCT}; runpodctl pod delete \$RUNPOD_POD_ID" >/tmp/uas-self-destruct.log 2>&1 &
           cd /workspace
           rm -rf unlearning
@@ -255,7 +259,9 @@ jobs:
           tar -czf /workspace/recovery-handoff.tar.gz -C /workspace recovery-handoff
           test -s /workspace/recovery-handoff.tar.gz
           tar -tzf /workspace/recovery-handoff.tar.gz | grep -Fx 'recovery-handoff/handoff-manifest.json'
+          cat /workspace/recovery-handoff.tar.gz >&3
           REMOTE
+          test -s recovery-handoff.tar.gz
 
       - name: Collect, verify, and freeze result bundle
         id: collect
@@ -264,26 +270,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           rm -rf preserved-openunlearning-results
-          rm -f recovery-handoff.tar.gz
           mkdir -p preserved-openunlearning-results
 
-          copied=0
-          for attempt in 1 2 3; do
-            echo "Result archive transfer attempt ${attempt}/3"
-            rm -f recovery-handoff.tar.gz
-            if scp -i .runpod/id_ed25519 -P "${{ steps.pod.outputs.port }}" \
-              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=15 -o ConnectionAttempts=2 \
-              -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
-              "root@${{ steps.pod.outputs.host }}:/workspace/recovery-handoff.tar.gz" \
-              recovery-handoff.tar.gz; then
-              copied=1
-              break
-            fi
-            sleep 10
-          done
-          [[ "$copied" == "1" ]]
           test -s recovery-handoff.tar.gz
+          sha256sum recovery-handoff.tar.gz | tee recovery-handoff.tar.gz.sha256
+          gzip -t recovery-handoff.tar.gz
           tar -tzf recovery-handoff.tar.gz > recovery-handoff.remote-manifest.txt
           grep -Fx 'recovery-handoff/handoff-manifest.json' recovery-handoff.remote-manifest.txt
           tar -xzf recovery-handoff.tar.gz --strip-components=1 -C preserved-openunlearning-results
