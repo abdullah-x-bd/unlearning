@@ -39,8 +39,11 @@ def test_recovery_workflow_does_not_silently_drop_required_evidence():
     assert 'sha256sum -c tofu-openunlearning-recovery-evidence.sha256' in collect
     assert 'evidence-manifest.txt' in collect
     assert 'checkpoint/binary payloads' in collect
-    assert 'tofu-openunlearning-recovery-evidence.tar.gz" \\n                gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz \\n              && scp' in collect
-    assert 'tofu-openunlearning-recovery-evidence.tar.gz" \\n                gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz || true' not in collect
+    assert '&& scp -i .runpod/id_ed25519' in collect
+    assert '/workspace/unlearning/results/tofu-openunlearning-recovery-evidence.tar.gz' in collect
+    assert '/workspace/unlearning/results/tofu-openunlearning-recovery-evidence.sha256' in collect
+    assert 'gpu-artifacts/tofu-openunlearning-recovery-evidence.tar.gz || true' not in collect
+    assert 'gpu-artifacts/tofu-openunlearning-recovery-evidence.sha256 || true' not in collect
 
     enforce = workflow.split('- name: Enforce evaluation and evidence-transfer success', 1)[1]
     assert 'steps.remote.outcome' in enforce
