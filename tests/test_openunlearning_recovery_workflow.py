@@ -16,7 +16,8 @@ def test_recovery_workflow_reuses_checkpoint_artifact_and_never_trains():
     assert 'run_tofu_openunlearning_eval.sh' not in workflow
     assert 'run_tofu_openunlearning_recovery_eval.sh' in workflow
     assert 'MIN_FREE_GPU_MIB: "45000"' in workflow
-    assert '--gpu-types "NVIDIA RTX A6000"' in workflow
+    assert '--gpu-types "NVIDIA RTX A6000" "NVIDIA A40"' in workflow
+    assert '[[ "$gpu_name" == "NVIDIA RTX A6000" || "$gpu_name" == "NVIDIA A40" ]]' in workflow
     assert 'tofu-openunlearning-recovery.tar' in workflow
     assert 'sha256sum /workspace/recovery.zip' in workflow
     assert 'patch_openunlearning_bf16_numpy.py' in workflow
