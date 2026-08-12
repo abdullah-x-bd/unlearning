@@ -5,6 +5,17 @@ type: software
 authors:
   - family-names: "X"
     given-names: "Abdullah"
+version: "0.3.1"
+date-released: "2026-08-12"
 year: 2026
 license: Apache-2.0
 repository-code: "https://github.com/abdullah-x-bd/unlearning"
+url: "https://github.com/abdullah-x-bd/unlearning"
+keywords:
+  - machine unlearning
+  - large language models
+  - deterministic replay
+  - data deletion
+  - reproducibility
+  - TOFU
+  - OpenUnlearning
