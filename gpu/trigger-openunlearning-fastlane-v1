@@ -1,1 +1,1 @@
-Fast-lane OpenUnlearning TOFU evaluation using preserved canonical checkpoints. Prioritize H200/H100/A100, then compatible fallbacks. No reconstruction, no optimizer updates. Trigger 2026-08-12 fastlane-v1.
+Fast-lane OpenUnlearning TOFU evaluation using preserved canonical checkpoints. Prioritize H200/H100/A100, then compatible fallbacks. No reconstruction, no optimizer updates. Trigger 2026-08-12 fastlane-v2 after SSH target fix.
