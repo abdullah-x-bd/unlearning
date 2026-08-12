@@ -124,20 +124,46 @@ def write_outputs(payload: dict[str, Any]) -> None:
 
 def create(args: argparse.Namespace) -> None:
     public_key = Path(args.public_key_file).read_text().strip()
-    errors: list[str] = []
     pod: dict[str, Any] | None = None
     cloud_used = ""
-    for cloud in args.clouds:
-        try:
-            pod = api_request(
-                "POST",
-                "/pods",
-                pod_payload(args.name, public_key, cloud, args.gpu_types, args.image),
-            )
-            cloud_used = cloud
+    errors: list[str] = []
+    availability_attempts = max(
+        1, int(os.environ.get("RUNPOD_AVAILABILITY_RETRIES", "12"))
+    )
+
+    for availability_attempt in range(1, availability_attempts + 1):
+        errors = []
+        for cloud in args.clouds:
+            try:
+                pod = api_request(
+                    "POST",
+                    "/pods",
+                    pod_payload(args.name, public_key, cloud, args.gpu_types, args.image),
+                )
+                cloud_used = cloud
+                break
+            except RuntimeError as exc:
+                errors.append(f"{cloud}: {exc}")
+
+        if pod is not None:
             break
-        except RuntimeError as exc:
-            errors.append(f"{cloud}: {exc}")
+
+        capacity_only = bool(errors) and all(
+            "no instances currently available" in error.lower() for error in errors
+        )
+        if capacity_only and availability_attempt < availability_attempts:
+            delay_seconds = min(30, 5 + availability_attempt * 2)
+            print(
+                "RunPod has no requested GPU capacity; "
+                f"retrying availability {availability_attempt + 1}/{availability_attempts} "
+                f"in {delay_seconds}s",
+                flush=True,
+            )
+            time.sleep(delay_seconds)
+            continue
+
+        break
+
     if pod is None:
         raise RuntimeError("Could not create a RunPod Pod: " + " | ".join(errors))
 
